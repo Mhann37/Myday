@@ -1,0 +1,198 @@
+@import "tailwindcss";
+
+/*
+  Design tokens. "Paper by day, ink by night": warm paper surfaces, amber for the
+  morning check-in, dusk blue for the night one. Chart colours (--series-*,
+  --heat-*) come from the validated dataviz palette and are stepped separately
+  for dark mode.
+*/
+:root {
+  color-scheme: light;
+  --bg: #f6f1e7;
+  --surface: #fffdf8;
+  --surface-2: #efe8d9;
+  --ink: #1e1b16;
+  --ink-2: #5d574b;
+  --muted: #8b8476;
+  --line: rgba(30, 27, 22, 0.1);
+
+  --accent: #bf6616;
+  --accent-soft: #f8e6cf;
+  --on-accent: #ffffff;
+
+  --morning: #bf6616;
+  --morning-soft: #f8e6cf;
+  --night: #3d4f94;
+  --night-soft: #dde3f6;
+
+  --good: #1f7a4d;
+  --bad: #b4452f;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --grid: #e6dfd0;
+  --axis: #c9c1ae;
+
+  /* validated ordinal ramp: blue 250 > 650, every step clears 2:1 on the surface */
+  --heat-0: #86b6ef;
+  --heat-1: #5598e7;
+  --heat-2: #2a78d6;
+  --heat-3: #1c5cab;
+  --heat-4: #104281;
+  --heat-text-0: #0f1a2b;
+  --heat-text-1: #0f1a2b;
+  --heat-text-2: #ffffff;
+  --heat-text-3: #ffffff;
+  --heat-text-4: #ffffff;
+  --heat-empty: #ece4d4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #11141b;
+    --surface: #1a1e28;
+    --surface-2: #252a38;
+    --ink: #f3efe6;
+    --ink-2: #bcb7aa;
+    --muted: #8c909c;
+    --line: rgba(255, 255, 255, 0.1);
+
+    --accent: #f0a653;
+    --accent-soft: #3a2c1a;
+    --on-accent: #1a1208;
+
+    --morning: #f0a653;
+    --morning-soft: #3a2c1a;
+    --night: #9bacf0;
+    --night-soft: #232b4a;
+
+    --good: #4cc38a;
+    --bad: #ef8a73;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --grid: #2b3040;
+    --axis: #3a4052;
+
+    --heat-0: #184f95;
+    --heat-1: #256abf;
+    --heat-2: #3987e5;
+    --heat-3: #6da7ec;
+    --heat-4: #b7d3f6;
+    --heat-text-0: #ffffff;
+    --heat-text-1: #ffffff;
+    --heat-text-2: #0d1420;
+    --heat-text-3: #0d1420;
+    --heat-text-4: #0d1420;
+    --heat-empty: #232837;
+  }
+}
+
+[data-period="night"] {
+  --accent: var(--night);
+  --accent-soft: var(--night-soft);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-morning: var(--morning);
+  --color-morning-soft: var(--morning-soft);
+  --color-night: var(--night);
+  --color-night-soft: var(--night-soft);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --font-sans: var(--font-figtree), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: var(--font-fraunces), Georgia, "Times New Roman", serif;
+}
+
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* A faint paper grain keeps the big flat surfaces from feeling clinical. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  background-image: radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--morning) 10%, transparent), transparent 45%),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--night) 10%, transparent), transparent 50%);
+}
+
+#app-root {
+  position: relative;
+  z-index: 1;
+}
+
+button,
+a,
+summary,
+select,
+input {
+  touch-action: manipulation;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px; /* stops mobile browsers zooming on focus */
+}
+
+.font-display {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
