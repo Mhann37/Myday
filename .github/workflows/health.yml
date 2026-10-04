@@ -1,0 +1,16 @@
+name: Availability check
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  health:
+    if: vars.MYDAY_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check the app and storage
+        env:
+          MYDAY_URL: ${{ vars.MYDAY_URL }}
+        run: curl --fail --silent --show-error --max-time 60 "$MYDAY_URL/api/health"

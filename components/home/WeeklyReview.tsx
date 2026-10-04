@@ -6,7 +6,7 @@ import { average, buildDays } from "@/lib/analytics";
 import { useEntries, useNow } from "@/lib/client";
 import { addDays, formatDayMonth } from "@/lib/dates";
 import { useHabits } from "@/lib/habit-client";
-import { habitValue, scheduled } from "@/lib/habits";
+import { habitValue, scheduled, goalOn, excused } from "@/lib/habits";
 import { Card } from "../ui";
 
 export function WeeklyReview() {
@@ -30,9 +30,11 @@ export function WeeklyReview() {
     .map((habit) => {
       const dates = Array.from({ length: 7 }, (_, i) =>
         addDays(from, i),
-      ).filter((d) => scheduled(habit, d));
+      ).filter((d) => scheduled(habit, d) && !excused(habit, d, data.logs));
       const complete = dates.filter(
-        (d) => (habitValue(habit, d, data.logs, days) ?? -1) >= habit.target,
+        (d) =>
+          (habitValue(habit, d, data.logs, days) ?? -1) >=
+          goalOn(habit, d).target,
       ).length;
       const logged = dates.filter(
         (d) => habitValue(habit, d, data.logs, days) !== undefined,
@@ -127,8 +129,8 @@ export function WeeklyReview() {
         <ArrowUpRight size={16} />
       </Link>
       <p className="mt-1 text-xs leading-relaxed text-muted">
-        Unlogged days stay unknown. Habit counts measure your current goals; day
-        scores describe how you felt.
+        Unlogged days stay unknown. Habit counts respect dated goals and pauses;
+        day scores describe how you felt.
       </p>
     </Card>
   );

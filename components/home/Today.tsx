@@ -1,31 +1,18 @@
 "use client";
 
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  ChevronRight,
-  Flame,
-  Leaf,
-  Moon,
-  Sun,
-} from "lucide-react";
+import { Check, ChevronRight, Flame, Leaf, Moon, Sun } from "lucide-react";
 import Link from "next/link";
-import { useMemo, type ReactNode } from "react";
-import {
-  average,
-  buildDays,
-  currentStreak,
-  rate,
-  type DayRecord,
-} from "@/lib/analytics";
+import { useMemo } from "react";
+import { buildDays, currentStreak, type DayRecord } from "@/lib/analytics";
 import { summaryChips } from "@/lib/checkin";
 import { setSaveNotice, useEntries, useNow, useSaveNotice } from "@/lib/client";
 import { addDays, dateRange, formatLong, formatWeekday } from "@/lib/dates";
-import { heatColor, heatText, round1, signed } from "@/lib/format";
+import { heatColor, heatText } from "@/lib/format";
 import type { Entry, Period } from "@/lib/schema";
 import { Card, cn } from "../ui";
 import { HabitTracker } from "../habits/HabitTracker";
+import { Experiments } from "./Experiments";
+import { OutcomeFeedback } from "./OutcomeFeedback";
 import { WeeklyReview } from "./WeeklyReview";
 import { useHabits } from "@/lib/habit-client";
 import { enrichDays } from "@/lib/habit-analytics";
@@ -166,17 +153,11 @@ export function Today() {
               <WeekStrip days={days} today={today} />
             </>
           )}
+          <Experiments />
         </div>
         <aside className="space-y-6">
+          <OutcomeFeedback />
           <WeeklyReview />
-          {days.length > 0 && <WeekTiles days={days} today={today} />}
-          <div className="rounded-2xl border border-dashed border-line p-4">
-            <p className="eyebrow">THE LONG GAME</p>
-            <p className="mt-2 text-sm leading-relaxed text-ink-2">
-              You don’t need a perfect streak. An honest record and one small
-              adjustment each week are enough to start learning.
-            </p>
-          </div>
         </aside>
       </div>
     </div>
@@ -352,143 +333,6 @@ function WeekStrip({ days, today }: { days: DayRecord[]; today: string }) {
           );
         })}
       </Card>
-    </section>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  delta,
-  deltaText,
-  upIsGood = true,
-  sub,
-}: {
-  label: string;
-  value: ReactNode;
-  delta?: number;
-  deltaText?: string;
-  upIsGood?: boolean;
-  sub?: string;
-}) {
-  const showDelta = delta !== undefined && Math.abs(delta) >= 0.05;
-  const good = delta !== undefined && delta > 0 === upIsGood;
-  return (
-    <Card className="!p-4">
-      <div className="text-sm text-ink-2">{label}</div>
-      <div className="mt-1 text-3xl font-semibold leading-tight">{value}</div>
-      <div className="mt-1 flex h-5 items-center gap-1 text-[13px]">
-        {showDelta ? (
-          <span
-            className={cn(
-              "inline-flex items-center gap-0.5 font-semibold",
-              good ? "text-good" : "text-bad",
-            )}
-          >
-            {delta > 0 ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
-            {deltaText}
-          </span>
-        ) : (
-          <span className="text-muted">{sub}</span>
-        )}
-        {showDelta && <span className="text-muted">vs prior 7d</span>}
-      </div>
-    </Card>
-  );
-}
-
-function WeekTiles({ days, today }: { days: DayRecord[]; today: string }) {
-  const stats = useMemo(() => {
-    const within = (from: number, to: number) =>
-      days.filter(
-        (d) => d.date >= addDays(today, from) && d.date <= addDays(today, to),
-      );
-    const cur = within(-6, 0);
-    const prev = within(-13, -7);
-    const diff = (a: number | undefined, b: number | undefined) =>
-      a === undefined || b === undefined ? undefined : a - b;
-    const score = average(cur, (d) => d.wellbeing);
-    const sleep = average(cur, (d) => d.sleepHours);
-    const stress = average(cur, (d) => d.stress);
-    const active = rate(cur, (d) => d.exercised);
-    const activePrev = rate(prev, (d) => d.exercised);
-    return {
-      score,
-      scoreDelta: diff(
-        score,
-        average(prev, (d) => d.wellbeing),
-      ),
-      sleep,
-      sleepDelta: diff(
-        sleep,
-        average(prev, (d) => d.sleepHours),
-      ),
-      stress,
-      stressDelta: diff(
-        stress,
-        average(prev, (d) => d.stress),
-      ),
-      active,
-      activeDelta:
-        active.of && activePrev.of ? active.yes - activePrev.yes : undefined,
-    };
-  }, [days, today]);
-
-  const dash = <span className="text-muted">–</span>;
-  return (
-    <section className="rise" aria-label="This week">
-      <h2 className="font-display mb-3 text-xl font-semibold">This week</h2>
-      <div className="grid grid-cols-2 gap-3">
-        <Tile
-          label="Day score"
-          value={stats.score === undefined ? dash : Math.round(stats.score)}
-          delta={stats.scoreDelta}
-          deltaText={
-            stats.scoreDelta === undefined
-              ? undefined
-              : signed(stats.scoreDelta, 0)
-          }
-          sub="out of 100"
-        />
-        <Tile
-          label="Sleep"
-          value={stats.sleep === undefined ? dash : `${round1(stats.sleep)}h`}
-          delta={stats.sleepDelta}
-          deltaText={
-            stats.sleepDelta === undefined
-              ? undefined
-              : `${signed(stats.sleepDelta)}h`
-          }
-          sub="average a night"
-        />
-        <Tile
-          label="Stress"
-          value={stats.stress === undefined ? dash : round1(stats.stress)}
-          delta={stats.stressDelta}
-          deltaText={
-            stats.stressDelta === undefined
-              ? undefined
-              : signed(stats.stressDelta)
-          }
-          upIsGood={false}
-          sub="1 calm - 5 maxed"
-        />
-        <Tile
-          label="Active days"
-          value={stats.active.of ? `${stats.active.yes}` : dash}
-          delta={stats.activeDelta}
-          deltaText={
-            stats.activeDelta === undefined
-              ? undefined
-              : signed(stats.activeDelta, 0)
-          }
-          sub={
-            stats.active.of
-              ? `of ${stats.active.of} logged`
-              : "lifting or cardio"
-          }
-        />
-      </div>
     </section>
   );
 }

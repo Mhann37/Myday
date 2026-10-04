@@ -13,6 +13,10 @@ import { formatDayMonth } from "@/lib/dates";
 import { Card } from "../ui";
 import { useHabits } from "@/lib/habit-client";
 import { Sprout } from "lucide-react";
+import { ConnectedSources } from "./ConnectedSources";
+import { MeasurementImport } from "./MeasurementImport";
+import { Personalisation } from "./Personalisation";
+import { ReminderSettings } from "./ReminderSettings";
 import { BackupRestore } from "./BackupRestore";
 
 interface InstallPromptEvent extends Event {
@@ -90,6 +94,18 @@ export function Settings() {
   const days = entries ? buildDays(entries) : [];
   const logout = async () => {
     try {
+      const deviceId = localStorage.getItem("myday-reminder-device");
+      if (deviceId) {
+        const disconnected = await fetch("/api/reminders", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: deviceId }),
+        });
+        if (!disconnected.ok) throw new Error("Could not disconnect reminders");
+        const registration = await navigator.serviceWorker?.getRegistration();
+        const subscription = await registration?.pushManager.getSubscription();
+        await subscription?.unsubscribe().catch(() => false);
+      }
       const response = await fetch("/api/logout", { method: "POST" });
       if (!response.ok) throw new Error("Sign out failed");
       goToLogin();
@@ -145,6 +161,10 @@ export function Settings() {
         </Card>
       )}
 
+      <Personalisation />
+      <ReminderSettings />
+      <MeasurementImport />
+      <ConnectedSources />
       <Card className="rise">
         <h2 className="font-display mb-1 text-xl font-semibold">Your data</h2>
         <p className="mb-2 text-sm text-ink-2">

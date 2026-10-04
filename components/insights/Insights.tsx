@@ -22,7 +22,8 @@ import { useEntries, useNow } from "@/lib/client";
 import { useHabits } from "@/lib/habit-client";
 import { enrichDays, habitDrivers } from "@/lib/habit-analytics";
 import type { HabitData } from "@/lib/habits";
-import { KIDS, MEDS, SEVERITY_LABELS, WIFE_NAME } from "@/lib/config";
+import { useWorkspace } from "@/lib/workspace-client";
+import { KIDS as DEFAULT_KIDS, MEDS, SEVERITY_LABELS } from "@/lib/config";
 import { addDays, dateRange, formatDayMonth } from "@/lib/dates";
 import { round1, signed } from "@/lib/format";
 import type { Entry } from "@/lib/schema";
@@ -117,6 +118,12 @@ function InsightsBody({
   setRange: (r: Range) => void;
   habitData: HabitData | null;
 }) {
+  const { preferences } = useWorkspace();
+  const KIDS = DEFAULT_KIDS.map((k) => ({
+    ...k,
+    name: preferences.childNames[k.key] ?? k.name,
+  }));
+  const WIFE_NAME = preferences.partnerName;
   const first = allDays[0]?.date ?? today;
   const from = range === 0 ? first : addDays(today, -(range - 1));
   const dates = useMemo(

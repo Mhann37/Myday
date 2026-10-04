@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { ConflictError } from "@/lib/workspace";
+import { logicalToday } from "@/lib/dates";
+import { preserveGoals } from "@/lib/habits";
 import { NextResponse } from "next/server";
 import { habitLogSchema, habitSchema, maxHabitValue } from "@/lib/habits";
 import { isAuthenticated } from "@/lib/session";
@@ -25,6 +29,11 @@ async function handle(request: Request, action: () => Promise<NextResponse>) {
   try {
     return await action();
   } catch (error) {
+    if (error instanceof ConflictError)
+      return NextResponse.json(
+        { error: error.message },
+        { status: 409, headers },
+      );
     console.error("Habit request failed", error);
     return NextResponse.json(
       { error: "Couldn't save or load your habits. Please try again." },
@@ -41,9 +50,8 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   return handle(request, async () => {
-    const parsed = habitSchema.safeParse(
-      await request.json().catch(() => null),
-    );
+    const json = await request.json().catch(() => null);
+    const parsed = habitSchema.safeParse(json);
     if (!parsed.success)
       return NextResponse.json(
         { error: "Check your habit name, target, and schedule." },
@@ -52,20 +60,26 @@ export async function PUT(request: Request) {
     const existing = (await getStore().listHabits()).habits.find(
       (h) => h.id === parsed.data.id,
     );
-    const habit = {
-      ...parsed.data,
-      createdDate: existing?.createdDate ?? parsed.data.createdDate,
+    const effectiveFrom = logicalToday(new Date());
+    const habit = preserveGoals(existing, parsed.data, effectiveFrom),
+      key = `habit:${habit.id}`;
+    const m = {
+      kind: "habit" as const,
+      key,
+      id: randomUUID(),
+      expected: json.expected ?? null,
+      data: habit,
+      effectiveFrom,
     };
-    await getStore().upsertHabit(habit);
+    await getStore().writeRecord(key, habit, m.expected, m.id, m);
     return NextResponse.json({ habit }, { headers });
   });
 }
 
 export async function PATCH(request: Request) {
   return handle(request, async () => {
-    const parsed = habitLogSchema.safeParse(
-      await request.json().catch(() => null),
-    );
+    const json = await request.json().catch(() => null);
+    const parsed = habitLogSchema.safeParse(json);
     if (!parsed.success)
       return NextResponse.json(
         { error: "Invalid habit log." },
@@ -90,7 +104,15 @@ export async function PATCH(request: Request) {
         { error: "Choose done or not done." },
         { status: 400, headers },
       );
-    await getStore().logHabit(habitId, date, value);
+    const key = `log:${habitId}:${date}`,
+      m = {
+        kind: "log" as const,
+        key,
+        id: randomUUID(),
+        expected: json.expected ?? null,
+        data: parsed.data,
+      };
+    await getStore().writeRecord(key, m.data, m.expected, m.id, m);
     return NextResponse.json(
       { habitId, date, value, updatedAt: new Date().toISOString() },
       { headers },

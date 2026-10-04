@@ -1,161 +1,77 @@
 "use client";
-
-import { useEffect, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { DAY_ROLLOVER_HOUR } from "./config";
 import { addDays, localDateString } from "./dates";
 import type { Entry, EntryData, Period } from "./schema";
-
-// ------------------------------------------------------------ entries store
-// All entries are small, so the client loads the whole diary once and every
-// screen derives what it needs from it. Saves update the cache immediately.
-
-interface State {
-  entries: Entry[] | null;
-  error: string | null;
-}
-
-const EMPTY: State = { entries: null, error: null };
-let state: State = EMPTY;
-const subscribers = new Set<() => void>();
-
-function emit(next: Partial<State>) {
-  state = { ...state, ...next };
-  subscribers.forEach((fn) => fn());
-}
-
-function subscribe(fn: () => void) {
-  subscribers.add(fn);
-  return () => {
-    subscribers.delete(fn);
-  };
-}
-
-/**
- * Leave the signed-in app with a full page load rather than a client navigation. That drops
- * all cached diary data from memory and stops the still-mounted nav links from prefetching
- * pages that now redirect to the login screen.
- */
+import {
+  change,
+  recordRevision,
+  useWorkspace,
+  refreshWorkspace,
+  lockOffline,
+} from "./workspace-client";
+let saveNotice = "";
+const notices = new Set<() => void>();
 export function goToLogin() {
+  lockOffline();
   window.location.replace(new URL("/login", window.location.origin).href);
 }
-
-let inflight: Promise<void> | null = null;
-let revision = 0;
-
-let saveNotice = "";
 export function setSaveNotice(message: string) {
   saveNotice = message;
-  subscribers.forEach((fn) => fn());
+  notices.forEach((fn) => fn());
 }
 export function useSaveNotice() {
   return useSyncExternalStore(
-    subscribe,
+    (fn) => {
+      notices.add(fn);
+      return () => {
+        notices.delete(fn);
+      };
+    },
     () => saveNotice,
     () => "",
   );
 }
-
-export function refreshEntries(): Promise<void> {
-  inflight ??= (async () => {
-    const version = revision;
-    try {
-      const res = await fetch("/api/entries", { cache: "no-store" });
-      if (res.status === 401) {
-        goToLogin();
-        return;
-      }
-      const json = (await res.json()) as { entries?: Entry[]; error?: string };
-      if (!res.ok || !json.entries)
-        throw new Error(json.error ?? "Couldn't load your diary");
-      if (version === revision) emit({ entries: json.entries, error: null });
-    } catch (err) {
-      emit({
-        error: err instanceof Error ? err.message : "Couldn't load your diary",
-      });
-    } finally {
-      inflight = null;
-    }
-  })();
-  return inflight;
-}
-
+export const refreshEntries = refreshWorkspace;
 export function useEntries() {
-  const s = useSyncExternalStore(
-    subscribe,
-    () => state,
-    () => EMPTY,
-  );
-  useEffect(() => {
-    void refreshEntries();
-    const visible = () => {
-      if (document.visibilityState === "visible") void refreshEntries();
-    };
-    document.addEventListener("visibilitychange", visible);
-    return () => document.removeEventListener("visibilitychange", visible);
-  }, []);
+  const s = useWorkspace();
   return {
-    entries: s.entries,
+    entries: s.data?.entries ?? null,
     error: s.error,
-    loading: s.entries === null && s.error === null,
-    refresh: refreshEntries,
+    loading: !s.data && !s.error,
+    refresh: refreshWorkspace,
   };
 }
-
-function upsertLocal(entry: Entry) {
-  revision++;
-  const rest = (state.entries ?? []).filter(
-    (e) => !(e.date === entry.date && e.period === entry.period),
-  );
-  emit({
-    entries: [...rest, entry].sort((a, b) =>
-      a.date === b.date
-        ? a.period < b.period
-          ? 1
-          : -1
-        : a.date < b.date
-          ? -1
-          : 1,
-    ),
-  });
-}
-
 export async function saveEntry(
   date: string,
   period: Period,
   data: EntryData,
+  expected?: string | null,
 ): Promise<Entry> {
-  const res = await fetch("/api/entries", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ date, period, data }),
+  const key = `entry:${date}:${period}`;
+  await change({
+    id: crypto.randomUUID(),
+    kind: "entry",
+    key,
+    expected: expected === undefined ? recordRevision(key) : expected,
+    data: { date, period, data },
   });
-  if (res.status === 401) {
-    goToLogin();
-    throw new Error("Signed out");
-  }
-  const json = (await res.json()) as { entry?: Entry; error?: string };
-  if (!res.ok || !json.entry) throw new Error(json.error ?? "Couldn't save");
-  upsertLocal(json.entry);
-  return json.entry;
+  return { date, period, data, updatedAt: new Date().toISOString() };
 }
-
-export async function deleteEntry(date: string, period: Period): Promise<void> {
-  const res = await fetch(`/api/entries?date=${date}&period=${period}`, {
-    method: "DELETE",
-  });
-  if (res.status === 401) {
-    goToLogin();
-    throw new Error("Please sign in again");
-  }
-  if (!res.ok) throw new Error("Couldn't delete");
-  revision++;
-  emit({
-    entries: (state.entries ?? []).filter(
-      (e) => !(e.date === date && e.period === period),
-    ),
+export async function deleteEntry(
+  date: string,
+  period: Period,
+  expected?: string | null,
+) {
+  const key = `entry:${date}:${period}`;
+  await change({
+    id: crypto.randomUUID(),
+    kind: "entry",
+    key,
+    expected: expected === undefined ? recordRevision(key) : expected,
+    data: null,
   });
 }
-
 // ---------------------------------------------------------------- the clock
 // Returns null on the server and during hydration so time-dependent text never
 // causes a hydration mismatch.

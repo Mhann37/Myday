@@ -1,5 +1,5 @@
 import type { DayRecord, Driver } from "./analytics";
-import { habitValue, type HabitData } from "./habits";
+import { habitValue, goalOn, paused, type HabitData } from "./habits";
 
 /** Quick logs contribute measurements without pretending a diary was completed. */
 export function enrichDays(
@@ -24,6 +24,10 @@ export function enrichDays(
       injuryParts: [],
       habitTargets: {},
     };
+    if (log.status === "excused" || paused(habit, log.date)) {
+      map.set(day.date, day);
+      continue;
+    }
     if (habit.source !== "custom") {
       const source = habit.source;
       if (
@@ -41,11 +45,13 @@ export function enrichDays(
     day.habitTargets ??= {};
     for (const habit of data.habits) {
       const value =
-        day.date < habit.createdDate
+        day.date < habit.createdDate || paused(habit, day.date)
           ? undefined
           : habitValue(habit, day.date, data.logs, days);
       day.habitTargets[habit.id] =
-        value === undefined ? undefined : value >= habit.target;
+        value === undefined
+          ? undefined
+          : value >= goalOn(habit, day.date).target;
     }
     if (day.lifted === true || day.cardio === true) day.exercised = true;
   }
