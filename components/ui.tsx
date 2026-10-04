@@ -1,11 +1,27 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
-export const cn = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
+export const cn = (...parts: (string | false | null | undefined)[]) =>
+  parts.filter(Boolean).join(" ");
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={cn("rounded-3xl border border-line bg-surface p-4 shadow-[0_1px_0_rgba(0,0,0,0.02)]", className)}>{children}</section>;
+export function Card({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-3xl border border-line bg-surface p-4 shadow-[0_1px_0_rgba(0,0,0,0.02)]",
+        className,
+      )}
+    >
+      {children}
+    </section>
+  );
 }
 
 export function Section({
@@ -31,7 +47,15 @@ export function Section({
   );
 }
 
-export function Question({ label, children, aside }: { label: string; children: ReactNode; aside?: ReactNode }) {
+export function Question({
+  label,
+  children,
+  aside,
+}: {
+  label: string;
+  children: ReactNode;
+  aside?: ReactNode;
+}) {
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -47,6 +71,42 @@ const optionBase =
   "select-none rounded-2xl border text-center font-semibold transition-[transform,background-color,color] duration-150 active:scale-95";
 const optionOff = "border-line bg-surface-2/60 text-ink-2";
 const optionOn = "border-transparent bg-accent text-on-accent shadow-sm";
+
+function moveRadio(
+  event: KeyboardEvent<HTMLDivElement>,
+  choose: (index: number) => void,
+) {
+  if (
+    ![
+      "ArrowRight",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowUp",
+      "Home",
+      "End",
+    ].includes(event.key)
+  )
+    return;
+  const radios = Array.from(
+    event.currentTarget.querySelectorAll<HTMLButtonElement>(
+      'button[role="radio"]',
+    ),
+  );
+  const current = radios.indexOf(event.target as HTMLButtonElement);
+  if (current < 0) return;
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? radios.length - 1
+        : (current +
+            (event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1) +
+            radios.length) %
+          radios.length;
+  event.preventDefault();
+  choose(next);
+  radios[next].focus();
+}
 
 export function ScaleInput({
   value,
@@ -65,18 +125,32 @@ export function ScaleInput({
 }) {
   return (
     <div>
-      <div role="radiogroup" aria-label={ariaLabel} className="grid grid-cols-5 gap-2">
+      <div
+        role="radiogroup"
+        aria-label={ariaLabel}
+        onKeyDown={(e) => moveRadio(e, (i) => onChange(i + 1))}
+        className="grid grid-cols-5 gap-2"
+      >
         {[1, 2, 3, 4, 5].map((n) => (
           <button
             key={n}
             type="button"
             role="radio"
+            tabIndex={value === n || (value === undefined && n === 1) ? 0 : -1}
             aria-checked={value === n}
             aria-label={faces ? `${n} of 5` : undefined}
             onClick={() => onChange(value === n ? undefined : n)}
-            className={cn(optionBase, "h-14 text-lg", value === n ? optionOn : optionOff)}
+            className={cn(
+              optionBase,
+              "h-14 text-lg",
+              value === n ? optionOn : optionOff,
+            )}
           >
-            {faces ? <span className="text-2xl leading-none">{faces[n - 1]}</span> : n}
+            {faces ? (
+              <span className="text-2xl leading-none">{faces[n - 1]}</span>
+            ) : (
+              n
+            )}
           </button>
         ))}
       </div>
@@ -102,15 +176,32 @@ export function Segmented<T extends string>({
   ariaLabel: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={ariaLabel} className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      onKeyDown={(e) => moveRadio(e, (i) => onChange(options[i].key))}
+      className="grid gap-2"
+      style={{
+        gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+      }}
+    >
       {options.map((o) => (
         <button
           key={o.key}
           type="button"
           role="radio"
+          tabIndex={
+            value === o.key || (value === undefined && options[0].key === o.key)
+              ? 0
+              : -1
+          }
           aria-checked={value === o.key}
           onClick={() => onChange(value === o.key ? undefined : o.key)}
-          className={cn(optionBase, "h-12 px-2 text-[15px]", value === o.key ? optionOn : optionOff)}
+          className={cn(
+            optionBase,
+            "h-12 px-2 text-[15px]",
+            value === o.key ? optionOn : optionOff,
+          )}
         >
           {o.label}
         </button>
@@ -155,11 +246,18 @@ export function Chips({
   noneLabel?: string;
   size?: "sm" | "md";
 }) {
-  const opts = options.map((o) => (typeof o === "string" ? { key: o, label: o } : o));
-  const chip = cn(optionBase, size === "sm" ? "h-9 px-3 text-sm" : "h-11 px-4 text-[15px]");
+  const opts = options.map((o) =>
+    typeof o === "string" ? { key: o, label: o } : o,
+  );
+  const chip = cn(
+    optionBase,
+    size === "sm" ? "h-11 px-3 text-sm" : "h-11 px-4 text-[15px]",
+  );
   const toggle = (key: string) => {
     const cur = value ?? [];
-    const next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
+    const next = cur.includes(key)
+      ? cur.filter((k) => k !== key)
+      : [...cur, key];
     onChange(next.length ? next : undefined);
   };
   return (
@@ -168,8 +266,13 @@ export function Chips({
         <button
           type="button"
           aria-pressed={value !== undefined && value.length === 0}
-          onClick={() => onChange(value !== undefined && value.length === 0 ? undefined : [])}
-          className={cn(chip, value !== undefined && value.length === 0 ? optionOn : optionOff)}
+          onClick={() =>
+            onChange(value !== undefined && value.length === 0 ? undefined : [])
+          }
+          className={cn(
+            chip,
+            value !== undefined && value.length === 0 ? optionOn : optionOff,
+          )}
         >
           {noneLabel}
         </button>
@@ -177,7 +280,13 @@ export function Chips({
       {opts.map((o) => {
         const on = !!value?.includes(o.key);
         return (
-          <button key={o.key} type="button" aria-pressed={on} onClick={() => toggle(o.key)} className={cn(chip, on ? optionOn : optionOff)}>
+          <button
+            key={o.key}
+            type="button"
+            aria-pressed={on}
+            onClick={() => toggle(o.key)}
+            className={cn(chip, on ? optionOn : optionOff)}
+          >
             {o.label}
           </button>
         );
@@ -213,13 +322,19 @@ export function Stepper({
   const btn =
     "grid h-12 w-14 place-items-center rounded-2xl border border-line bg-surface-2/60 text-2xl font-semibold text-ink-2 transition active:scale-95 disabled:opacity-35";
   return (
-    <div className="flex items-center gap-2" role="group" aria-label={ariaLabel}>
+    <div
+      className="flex items-center gap-2"
+      role="group"
+      aria-label={ariaLabel}
+    >
       <button
         type="button"
         className={btn}
-        aria-label="Decrease"
+        aria-label={`Decrease ${ariaLabel}`}
         disabled={value === undefined || value <= min}
-        onClick={() => value !== undefined && onChange(Math.max(min, round(value - step)))}
+        onClick={() =>
+          value !== undefined && onChange(Math.max(min, round(value - step)))
+        }
       >
         −
       </button>
@@ -228,17 +343,32 @@ export function Stepper({
         onClick={() => value === undefined && onChange(start ?? min)}
         className={cn(
           "h-12 min-w-0 flex-1 rounded-2xl border px-3 text-center text-lg font-semibold",
-          value === undefined ? "border-dashed border-line text-muted" : "border-transparent bg-accent-soft text-ink",
+          value === undefined
+            ? "border-dashed border-line text-muted"
+            : "border-transparent bg-accent-soft text-ink",
         )}
       >
-        {value === undefined ? "Tap to set" : `${show(value)}${unit ? ` ${unit}` : ""}`}
+        {value === undefined
+          ? "Tap to set"
+          : `${show(value)}${unit ? ` ${unit}` : ""}`}
       </button>
       <button
         type="button"
         className={btn}
-        aria-label="Increase"
+        aria-label={`Increase ${ariaLabel}`}
         disabled={value !== undefined && value >= max}
-        onClick={() => onChange(Math.min(max, round(value === undefined ? (start ?? min) + (start === undefined ? step : 0) : value + step)))}
+        onClick={() =>
+          onChange(
+            Math.min(
+              max,
+              round(
+                value === undefined
+                  ? (start ?? min) + (start === undefined ? step : 0)
+                  : value + step,
+              ),
+            ),
+          )
+        }
       >
         +
       </button>

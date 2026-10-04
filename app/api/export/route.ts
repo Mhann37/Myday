@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
-import { dailyCsv, rawCsv } from "@/lib/export";
+import { dailyCsv, habitsCsv, rawCsv } from "@/lib/export";
 import { isAuthenticated } from "@/lib/session";
 import { getStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  if (!(await isAuthenticated(request))) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  if (!(await isAuthenticated(request)))
+    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   const format = new URL(request.url).searchParams.get("format") ?? "daily";
   const stamp = new Date().toISOString().slice(0, 10);
-  const entries = await getStore().list();
+  const [entries, habits] = await Promise.all([
+    getStore().list(),
+    getStore().listHabits(),
+  ]);
 
   const file = (body: string, name: string, ext: string, type: string) =>
     new NextResponse(body, {
@@ -23,11 +27,27 @@ export async function GET(request: Request) {
 
   switch (format) {
     case "daily":
-      return file(dailyCsv(entries), "myday-daily", "csv", "text/csv");
+      return file(dailyCsv(entries, habits), "myday-daily", "csv", "text/csv");
+    case "habits":
+      return file(habitsCsv(habits), "myday-habits", "csv", "text/csv");
     case "raw":
       return file(rawCsv(entries), "myday-checkins", "csv", "text/csv");
     case "json":
-      return file(JSON.stringify({ exportedAt: new Date().toISOString(), entries }, null, 2), "myday-backup", "json", "application/json");
+      return file(
+        JSON.stringify(
+          {
+            version: 2,
+            exportedAt: new Date().toISOString(),
+            entries,
+            ...habits,
+          },
+          null,
+          2,
+        ),
+        "myday-backup",
+        "json",
+        "application/json",
+      );
     default:
       return NextResponse.json({ error: "Unknown format" }, { status: 400 });
   }

@@ -5,22 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Offline</title>
     <style>
-      :root { color-scheme: light dark; }
-      body {
-        margin: 0; min-height: 100vh; display: grid; place-items: center; text-align: center;
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        background: #f6f1e7; color: #1e1b16; padding: 24px;
+      :root {
+        color-scheme: light dark;
       }
-      @media (prefers-color-scheme: dark) { body { background: #11141b; color: #f3efe6; } }
-      h1 { font-family: Georgia, serif; font-weight: 600; margin: 0 0 8px; }
-      p { margin: 0 0 20px; opacity: 0.7; }
-      button { font: inherit; padding: 12px 22px; border-radius: 14px; border: 0; background: #bf6616; color: #fff; font-weight: 600; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        background: #f6f1e7;
+        color: #1e1b16;
+        padding: 24px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #11141b;
+          color: #f3efe6;
+        }
+      }
+      h1 {
+        font-family: Georgia, serif;
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 20px;
+        opacity: 0.7;
+      }
+      button {
+        font: inherit;
+        padding: 12px 22px;
+        border-radius: 14px;
+        border: 0;
+        background: #2e6651;
+        color: #fff;
+        font-weight: 600;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>You're offline</h1>
-      <p>My Day needs a connection to save and load your check-ins.</p>
+      <p>
+        Reconnect to load your habits and diary. Any check-in draft<br />saved
+        on this device will be ready when you return.
+      </p>
       <button onclick="location.reload()">Try again</button>
     </main>
   </body>

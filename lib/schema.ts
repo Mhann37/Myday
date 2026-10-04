@@ -81,7 +81,16 @@ export const entryDataSchema = z.object({
 });
 
 export const periodSchema = z.enum(["morning", "night"]);
-export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+export const dateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD")
+  .refine((value) => {
+    const date = new Date(`${value}T12:00:00Z`);
+    return (
+      Number.isFinite(date.getTime()) &&
+      date.toISOString().slice(0, 10) === value
+    );
+  }, "Choose a real calendar date");
 
 export const putEntrySchema = z.object({
   date: dateSchema,

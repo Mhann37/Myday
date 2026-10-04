@@ -5,11 +5,16 @@ import { APP_NAME } from "@/lib/config";
 import "./globals.css";
 
 const figtree = Figtree({ variable: "--font-figtree", subsets: ["latin"] });
-const fraunces = Fraunces({ variable: "--font-fraunces", subsets: ["latin"], axes: ["opsz"] });
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  axes: ["opsz"],
+});
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: "A twice-daily diary of mood, energy, family, training and habits.",
+  description:
+    "Build a daily rhythm, track your habits, and discover what helps you feel and perform at your best.",
   applicationName: APP_NAME,
   robots: { index: false, follow: false },
   appleWebApp: { capable: true, title: APP_NAME, statusBarStyle: "default" },
@@ -31,7 +36,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en-AU" className={`${figtree.variable} ${fraunces.variable} h-full antialiased`}>
+    <html
+      lang="en-AU"
+      className={`${figtree.variable} ${fraunces.variable} h-full antialiased`}
+    >
       <body className="min-h-dvh">
         <div id="app-root" className="min-h-dvh">
           {children}
