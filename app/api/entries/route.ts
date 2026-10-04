@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { ConflictError } from "@/lib/workspace";
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/session";
 import { dateSchema, periodSchema, putEntrySchema } from "@/lib/schema";
@@ -8,6 +10,11 @@ export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "no-store" };
 
 function fail(err: unknown) {
+  if (err instanceof ConflictError)
+    return NextResponse.json(
+      { error: err.message },
+      { status: 409, headers: noStore },
+    );
   console.error(err);
   return NextResponse.json(
     {
@@ -47,7 +54,25 @@ export async function PUT(request: Request) {
   }
   try {
     const { date, period, data } = parsed.data;
-    const entry = await getStore().upsert(date, period, data);
+    const key = `entry:${date}:${period}`,
+      body = json as { expected?: string | null };
+    const mutation = {
+      kind: "entry" as const,
+      key,
+      id: randomUUID(),
+      expected: body.expected ?? null,
+      data: { date, period, data },
+    };
+    await getStore().writeRecord(
+      key,
+      mutation.data,
+      mutation.expected,
+      mutation.id,
+      mutation,
+    );
+    const entry = (await getStore().list()).find(
+      (e) => e.date === date && e.period === period,
+    )!;
     return NextResponse.json({ entry }, { headers: noStore });
   } catch (err) {
     return fail(err);
@@ -63,7 +88,21 @@ export async function DELETE(request: Request) {
   if (!date.success || !period.success)
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   try {
-    await getStore().remove(date.data, period.data);
+    const key = `entry:${date.data}:${period.data}`,
+      mutation = {
+        kind: "entry" as const,
+        key,
+        id: randomUUID(),
+        expected: params.get("expected"),
+        data: null,
+      };
+    await getStore().writeRecord(
+      key,
+      null,
+      mutation.expected,
+      mutation.id,
+      mutation,
+    );
     return NextResponse.json({ ok: true }, { headers: noStore });
   } catch (err) {
     return fail(err);

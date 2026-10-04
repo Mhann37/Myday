@@ -1,7 +1,7 @@
 import { DAILY_COLUMNS, buildDays } from "./analytics";
 import type { Entry } from "./schema";
 import { enrichDays } from "./habit-analytics";
-import { habitValue, type HabitData } from "./habits";
+import { goalOn, habitValue, type HabitData } from "./habits";
 
 const cell = (v: unknown): string => {
   if (v === undefined || v === null) return "";
@@ -43,7 +43,9 @@ export function habitsCsv(data: HabitData): string {
       "habit",
       "value",
       "unit",
-      "current_target",
+      "target_on_date",
+      "status",
+      "source",
       "updated_at",
     ],
     data.logs.map((l) => {
@@ -52,9 +54,11 @@ export function habitsCsv(data: HabitData): string {
         l.date,
         l.habitId,
         habit?.name,
-        l.value,
+        l.status === "excused" ? undefined : l.value,
         habit?.unit,
-        habit?.target,
+        habit ? goalOn(habit, l.date).target : undefined,
+        l.status ?? "logged",
+        l.source ?? "manual",
         l.updatedAt,
       ];
     }),

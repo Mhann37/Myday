@@ -11,7 +11,8 @@ Built with Next.js, hosted on Vercel, data stored in your own Neon Postgres data
 - Log from Today with one tap or a quick counter. Habits shows your week; tap a past day to correct it. Archive a goal to keep its history, and restore it whenever you want.
 - Quick logs take precedence over linked diary values for that habit/day without overwriting the diary. Clear a quick log to use the diary again. Unlogged values remain unknown in analytics.
 - Your weekly reset summarises the last seven complete days and suggests one small adjustment. Rest days don't break scheduled-day streaks.
-- Targets and schedules apply to historical progress too. Archive and create a new habit for a separate goal history.
+- Targets and schedules have effective dates, preserving earlier achievements. Pause for illness/travel or excuse a day; see rolling consistency alongside streaks.
+- Organise habits into morning/day/evening routines, pin/order them and collapse completed actions. Add a session timer for a timed practice.
 - Custom habits feed the existing corrected Insights comparisons. Record “not done” explicitly on skipped days so the comparison has examples of both outcomes.
 
 The [product assessment](docs/product-assessment.md) describes the audit, improvements, acceptance checks, remaining gaps, and proposed success measures.
@@ -25,7 +26,7 @@ The [product assessment](docs/product-assessment.md) describes the audit, improv
 
 Unanswered questions are stored as _missing_, never as a default, so the analysis stays honest. Injuries carry forward from your last check-in, so you only update them.
 
-Names, option lists and body parts live in [`lib/config.ts`](lib/config.ts). Change "Wife" to a real name there if you like.
+Choose quick questions, outcomes and household display names in Settings. Default option lists and body parts live in [`lib/config.ts`](lib/config.ts); existing household keys stay stable so renaming does not rewrite records.
 
 ### Insights
 
@@ -73,10 +74,13 @@ Vercel deploys your repository's **default branch** to the live URL (Production)
 ## Day to day
 
 - **Habits:** tick an action or add to a counter from Today. Habits lets you adjust goals and correct earlier days.
-- **Morning:** open the app, tap **Morning**, answer what you can, **Save**. The quick flow shows five core questions.
-- **Night:** same with **Night**; eight core questions and an optional win. Choose **Full diary** whenever you want the household, training, work, medication, and reflection detail. Switching modes preserves answers. After midnight (until 4am) a check-in still counts toward the day that just ended.
+- **Morning:** open the app, tap **Morning**, answer what you can, **Save**. Choose the quick questions in Settings (five by default).
+- **Night:** same with **Night**; your chosen quick questions (eight by default) and an optional win. Choose **Full diary** whenever you want the household, training, work, medication, and reflection detail. Switching modes preserves answers. After midnight (until 4am) a check-in still counts toward the day that just ended.
 - Missed a day? **History** shows every day, including gaps. Tap a day to fill it in or edit it.
-- Unsaved answers are kept on your phone as a draft when browser storage is available; the form reports whether draft saving succeeded. Saving to your database and quick habit logging require a connection. A fresh offline launch shows a fallback page.
+- Enable encrypted device storage in Settings for offline habits and quick check-ins. Fresh launches require the separate device passphrase; saved changes queue until the app is unlocked and connected. Conflicting device edits require a choice. Drafts are encrypted when device storage is enabled, otherwise kept in ordinary browser storage.
+- Plan one adjustment, choose an outcome and a review date, then record a continue/simplify/change decision. Summaries show sample counts, not causal claims.
+- Optional push reminders include device timezone, quiet hours, snooze and completion suppression. Scheduled delivery needs external setup; calendar reminders can be downloaded immediately.
+- Import measurement CSVs or connect a habit-scoped external source. Existing manual readings are preserved.
 
 ## Changing your passcode
 
@@ -103,14 +107,11 @@ Browser tests: `npm run test:e2e` builds the production app and exercises it in 
 ## How it's built
 
 - **Next.js (App Router) + TypeScript + Tailwind**, installable as a PWA (`app/manifest.ts`, `public/sw.js`)
-- **Auth:** one passcode (`APP_PASSCODE`). A correct entry sets a signed, expiring, `httpOnly` cookie. Failed attempts are throttled (8 per 15 minutes), and every API route re-checks the cookie.
+- **Auth:** one passcode (`APP_PASSCODE`). A correct entry sets a signed, expiring, `httpOnly` cookie. Failed attempts are throttled (8 per 15 minutes). Diary APIs require the cookie; ingestion accepts only a scoped source token, the scheduler accepts only its bearer secret, and health returns minimal status.
 - **Storage:** `entries` keyed by `(entry_date, period)`, habit definitions in `habits`, and individual quick measurements in `habit_logs` keyed by `(habit_id, log_date)`. Tables are created automatically; existing diary records are unchanged. Date logic uses validated local `YYYY-MM-DD` strings. Postgres backup imports are atomic and repeatable.
 - **Insights engine:** [`lib/analytics.ts`](lib/analytics.ts) and [`lib/stats.ts`](lib/stats.ts), tested against synthetic data with known planted effects and against pure noise.
 - **Charts:** hand-built SVG using a colour palette validated for colour-blind safety in light and dark mode, each with a "View as table" fallback.
 
-## Ideas for later
+## Deployment and remaining activation
 
-- Push reminders at your chosen morning and night times (works on Android once installed; needs a small scheduled job)
-- Saved weekly experiments with an outcome and review date
-- A durable offline queue and simultaneous-edit conflict handling
-- More outcomes in the insights engine, such as the next day's kids' behaviour
+[Release readiness](docs/release-readiness.md) describes offline storage, versioned writes, health-data bridges, reminder activation, availability checks and the hosted restore rehearsal. Configure the scheduler secrets and actual production URL before treating scheduled push as active. A direct Apple Health/Health Connect connection needs the user's device/source and a bridge; this web app does not claim native health access. Provider backups and actual-phone verification remain external acceptance steps.

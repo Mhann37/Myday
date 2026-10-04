@@ -2,6 +2,8 @@
 
 Assessment date: 4 October 2026 (Australia/Sydney). Intended user: one person, primarily on a phone, tracking habits and everyday performance.
 
+This describes the first upgrade. The subsequent [daily practice release](release-readiness.md) implements personalisation, offline durability, conflict handling, dated goals, experiments, reminders and measurement connections; that document records their limits and remaining activation.
+
 ## Product judgment
 
 The original product was a useful personal diary with unusually careful statistics. Its weakness was the gap between recording a day and improving the next one. The home screen offered two forms; the night form had 21 tracked questions plus conditional details and reflection. There were no configurable habits, explicit goals, quick action logging, or weekly decisions. A worthwhile habit app needs the full cycle: **choose a small action → do it → record it easily → notice progress → adjust the next week**.

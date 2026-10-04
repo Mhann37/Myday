@@ -24,8 +24,7 @@ export function NetworkStatus() {
     >
       <WifiOff size={17} className="mt-0.5 shrink-0" />
       <span>
-        You’re offline. Check-in drafts stay on this device. Reconnect before
-        saving or logging a habit.
+        You’re offline. With device storage enabled and unlocked, saves stay on this device until you reconnect.
       </span>
     </div>
   );

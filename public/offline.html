@@ -2,61 +2,152 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Offline</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#faf8f3" />
+    <title>My Day · offline</title>
     <style>
       :root {
         color-scheme: light dark;
+        --bg: #faf8f3;
+        --ink: #203229;
+        --surface: #fff;
+        --line: #d8ded7;
+        --accent: #286447;
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
         margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        text-align: center;
-        font-family:
-          system-ui,
-          -apple-system,
-          "Segoe UI",
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          16px system-ui,
           sans-serif;
-        background: #f6f1e7;
-        color: #1e1b16;
-        padding: 24px;
       }
-      @media (prefers-color-scheme: dark) {
-        body {
-          background: #11141b;
-          color: #f3efe6;
-        }
+      main {
+        max-width: 620px;
+        margin: auto;
+        padding: 32px 20px;
       }
       h1 {
         font-family: Georgia, serif;
-        font-weight: 600;
-        margin: 0 0 8px;
+        font-size: 36px;
+        margin: 8px 0;
       }
       p {
-        margin: 0 0 20px;
-        opacity: 0.7;
+        line-height: 1.6;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 20px;
+        margin: 16px 0;
+      }
+      input,
+      button,
+      select {
+        font: inherit;
+        min-height: 44px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        padding: 10px;
+        background: var(--surface);
+        color: var(--ink);
+      }
+      input {
+        width: 100%;
+        margin: 8px 0;
       }
       button {
-        font: inherit;
-        padding: 12px 22px;
-        border-radius: 14px;
-        border: 0;
-        background: #2e6651;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
         color: #fff;
-        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.5;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 20px 0;
+      }
+      .row span {
+        flex: 1;
+      }
+      small {
+        display: block;
+        opacity: 0.8;
+        margin-top: 4px;
+      }
+      #status {
+        font-size: 14px;
+      }
+      a {
+        color: var(--accent);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17221b;
+          --surface: #202e24;
+          --ink: #e5ecdf;
+          --line: #465444;
+          --accent: #4f926b;
+        }
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>You're offline</h1>
-      <p>
-        Reconnect to load your habits and diary. Any check-in draft<br />saved
-        on this device will be ready when you return.
+      <small>YOUR PRIVATE SPACE · OFFLINE</small>
+      <h1>My Day</h1>
+      <p id="status" role="status">
+        Unlock your device copy to record habits without a connection.
       </p>
-      <button onclick="location.reload()">Try again</button>
+      <section id="unlock" class="card">
+        <h2>Unlock device storage</h2>
+        <form id="unlock-form">
+          <label for="pass">Device passphrase</label
+          ><input
+            id="pass"
+            type="password"
+            required
+            autocomplete="off"
+          /><button class="primary">Unlock</button>
+        </form>
+        <p id="error" role="alert"></p>
+        <p>
+          Your app passcode and device passphrase may be different. Offline
+          storage must first be enabled in Settings.
+        </p>
+      </section>
+      <section id="habits" hidden class="card">
+        <h2>Today’s habits</h2>
+        <div id="list"></div>
+      </section>
+      <section id="checkin" hidden class="card">
+        <h2>A quick check-in</h2>
+        <form id="checkin-form">
+          <label for="period">Period</label
+          ><select id="period">
+            <option value="morning">Morning</option>
+            <option value="night">Night</option>
+          </select>
+          <div id="questions"></div>
+          <button class="primary">Save on device</button>
+        </form>
+      </section>
+      <button id="sync" hidden class="primary">Sync and open app</button
+      ><button id="lock" hidden>Lock device</button>
+      <p><a href="/">Try opening online</a></p>
     </main>
+    <script type="module" src="/offline-app.js"></script>
   </body>
 </html>

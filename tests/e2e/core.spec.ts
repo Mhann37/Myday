@@ -1,8 +1,53 @@
-import { test, expect, type Page } from "@playwright/test";
+import {
+  test,
+  expect,
+  type Page,
+  type APIRequestContext,
+} from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { addDays } from "../../lib/dates";
 import { starterHabit } from "../../lib/habits";
 import { generateDemoEntries } from "../../scripts/demo-data";
+
+async function versionedPut(
+  page: Page,
+  route: string,
+  options: Parameters<APIRequestContext["put"]>[1],
+) {
+  const data = options?.data as Record<string, unknown>;
+  const snapshot = await page.request.get("/api/workspace");
+  const records = snapshot.ok() ? (await snapshot.json()).records : [];
+  const key =
+    route === "/api/habits"
+      ? `habit:${data.id}`
+      : `entry:${data.date}:${data.period}`;
+  return page.request.put(route, {
+    ...options,
+    data: {
+      ...data,
+      expected:
+        records.find((r: { key: string }) => r.key === key)?.revision ?? null,
+    },
+  });
+}
+async function versionedPatch(
+  page: Page,
+  route: string,
+  options: Parameters<APIRequestContext["patch"]>[1],
+) {
+  const data = options?.data as Record<string, unknown>;
+  const snapshot = await page.request.get("/api/workspace");
+  const records = snapshot.ok() ? (await snapshot.json()).records : [];
+  const key = `log:${data.habitId}:${data.date}`;
+  return page.request.patch(route, {
+    ...options,
+    data: {
+      ...data,
+      expected:
+        records.find((r: { key: string }) => r.key === key)?.revision ?? null,
+    },
+  });
+}
 
 async function signIn(page: Page) {
   await page.goto("/login");
@@ -44,7 +89,7 @@ test("private app, habit lifecycle, failed-save rollback, exports, keyboard, and
   await expect(
     page.getByRole("button", { name: `Undo ${name}`, exact: true }),
   ).toBeVisible();
-  await page.route("**/api/habits", async (route) => {
+  await page.route("**/api/workspace", async (route) => {
     if (route.request().method() === "PATCH")
       await route.fulfill({
         status: 500,
@@ -59,7 +104,7 @@ test("private app, habit lifecycle, failed-save rollback, exports, keyboard, and
   await expect(
     page.getByRole("button", { name: `Undo ${name}`, exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await page.unroute("**/api/habits");
+  await page.unroute("**/api/workspace");
   await page.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -84,7 +129,7 @@ test("private app, habit lifecycle, failed-save rollback, exports, keyboard, and
   const backupResponse = await page.request.get("/api/export?format=json");
   expect(backupResponse.ok()).toBeTruthy();
   const backup = await backupResponse.json();
-  expect(backup.version).toBe(2);
+  expect(backup.version).toBe(3);
   expect(
     backup.habits.some((h: { name: string }) => h.name === name),
   ).toBeTruthy();
@@ -128,7 +173,7 @@ test("linked counters, corrections, backup restore, validation, and sign-out", a
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const habit = starterHabit("water", addDays(today, -10));
-  const created = await page.request.put("/api/habits", { data: habit });
+  const created = await versionedPut(page, "/api/habits", { data: habit });
   expect(created.ok()).toBeTruthy();
   const diaryResponse = await page.request.get("/api/entries");
   const diary = (await diaryResponse.json()).entries;
@@ -138,7 +183,7 @@ test("linked counters, corrections, backup restore, validation, and sign-out", a
   );
   expect(
     (
-      await page.request.put("/api/entries", {
+      await versionedPut(page, "/api/entries", {
         data: {
           date: today,
           period: "night",
@@ -209,13 +254,11 @@ test("linked counters, corrections, backup restore, validation, and sign-out", a
     ],
   };
   await page.goto("/settings");
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({
-      name: "myday-backup.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(restore)),
-    });
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "myday-backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(restore)),
+  });
   await expect(
     page.getByText("Ready to restore", { exact: true }),
   ).toBeVisible();
@@ -229,21 +272,21 @@ test("linked counters, corrections, backup restore, validation, and sign-out", a
   ).toBeVisible();
   expect(
     (
-      await page.request.put("/api/entries", {
+      await versionedPut(page, "/api/entries", {
         data: { date: "2026-02-30", period: "night", data: {} },
       })
     ).status(),
   ).toBe(400);
   expect(
     (
-      await page.request.patch("/api/habits", {
+      await versionedPatch(page, "/api/habits", {
         data: { habitId: habit.id, date: today, value: 50 },
       })
     ).status(),
   ).toBe(400);
   expect(
     (
-      await page.request.put("/api/habits", {
+      await versionedPut(page, "/api/habits", {
         headers: { Origin: "https://untrusted.example" },
         data: habit,
       })
@@ -267,12 +310,12 @@ test("representative diary renders without browser errors and has an accessible 
   });
   for (const entry of generateDemoEntries(today, 30))
     expect(
-      (await page.request.put("/api/entries", { data: entry })).ok(),
+      (await versionedPut(page, "/api/entries", { data: entry })).ok(),
     ).toBeTruthy();
   const movement = starterHabit("exercised", addDays(today, -30));
   movement.cue = "After work, change into training gear";
   expect(
-    (await page.request.put("/api/habits", { data: movement })).ok(),
+    (await versionedPut(page, "/api/habits", { data: movement })).ok(),
   ).toBeTruthy();
   for (const [viewport, colorScheme] of [
     [{ width: 1440, height: 1100 }, "light"],
@@ -385,12 +428,12 @@ test("an open check-in stays on its original day across the 4am rollover", async
     .getByRole("textbox", { name: "One win", exact: true })
     .fill("Saved to the day this check-in started");
   const saved = page.waitForRequest(
-    (req) => req.url().includes("/api/entries") && req.method() === "PUT",
+    (req) => req.url().includes("/api/workspace") && req.method() === "PATCH",
   );
   await page
     .getByRole("button", { name: /Save night check-in|Update check-in/ })
     .click();
-  expect((await saved).postDataJSON().date).toBe("2026-10-04");
+  expect((await saved).postDataJSON().data.date).toBe("2026-10-04");
   await expect(
     page.getByText("Monday 5 October", { exact: false }),
   ).toBeVisible();

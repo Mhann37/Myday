@@ -2,6 +2,8 @@
 
 import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { recordRevision } from "@/lib/workspace-client";
+import { addDays } from "@/lib/dates";
 import { saveHabit } from "@/lib/habit-client";
 import {
   habitSchema,
@@ -31,6 +33,12 @@ export function HabitEditor({
   const [draft, setDraft] = useState(
     () => habit ?? starterHabit("custom", today),
   );
+  const baseRevision = useRef(
+    habit ? recordRevision(`habit:${habit.id}`) : null,
+  );
+  const [effectiveFrom, setEffectiveFrom] = useState(today);
+  const [pauseFrom, setPauseFrom] = useState(today);
+  const [pauseTo, setPauseTo] = useState(addDays(today, 6));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -52,7 +60,7 @@ export function HabitEditor({
     setBusy(true);
     setError(null);
     try {
-      await saveHabit(result.data);
+      await saveHabit(result.data, effectiveFrom, baseRevision.current);
       onClose();
     } catch (err) {
       setError(
@@ -139,7 +147,7 @@ export function HabitEditor({
               onChange={(e) => patch({ cue: e.target.value })}
             />
           </label>
-          {draft.source === "custom" && (
+          {!habit && draft.source === "custom" && (
             <fieldset>
               <legend className="mb-2 text-sm font-semibold">
                 How to log it
@@ -186,6 +194,7 @@ export function HabitEditor({
                 <input
                   className={input}
                   maxLength={24}
+                  disabled={!!habit}
                   placeholder="minutes"
                   value={draft.unit}
                   onChange={(e) => patch({ unit: e.target.value })}
@@ -205,6 +214,60 @@ export function HabitEditor({
                 />
               </label>
             </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-semibold">
+              Place in your day
+              <select
+                className={input}
+                value={draft.routine ?? "anytime"}
+                onChange={(e) =>
+                  patch({ routine: e.target.value as Habit["routine"] })
+                }
+              >
+                {["morning", "day", "evening", "anytime"].map((r) => (
+                  <option key={r} value={r}>
+                    {r.charAt(0).toUpperCase() + r.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm font-semibold">
+              Display order
+              <input
+                className={input}
+                type="number"
+                min={0}
+                max={1000}
+                value={draft.order ?? 0}
+                onChange={(e) => patch({ order: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.pinned ?? false}
+              onChange={(e) => patch({ pinned: e.target.checked })}
+            />
+            Pin at the top of Today
+          </label>
+          {(draft.kind === "check" ||
+            (draft.source === "custom" &&
+              ["min", "minutes"].includes(draft.unit.toLowerCase()))) && (
+            <label className="block text-sm font-semibold">
+              Session timer (minutes, 0 to disable)
+              <input
+                className={input}
+                type="number"
+                min={0}
+                max={180}
+                value={draft.timerMinutes ?? 0}
+                onChange={(e) =>
+                  patch({ timerMinutes: Number(e.target.value) })
+                }
+              />
+            </label>
           )}
           <label className="block text-sm font-semibold">
             Frequency
@@ -278,10 +341,89 @@ export function HabitEditor({
             </p>
           )}
           {habit && (
-            <p className="text-xs text-muted">
-              Progress is measured against your current target. Archive a habit
-              and create a new one to start a different goal.
-            </p>
+            <>
+              <label className="block text-sm font-semibold">
+                Goal changes start
+                <input
+                  type="date"
+                  className={input}
+                  min={today}
+                  value={effectiveFrom}
+                  onChange={(e) => setEffectiveFrom(e.target.value)}
+                />
+              </label>
+              <p className="text-xs text-muted">
+                Earlier targets and schedules stay in your history. This date
+                applies to target and frequency changes.
+              </p>
+              <details className="rounded-xl border border-line p-3">
+                <summary className="min-h-11 cursor-pointer text-sm font-semibold">
+                  Pause for illness, travel or rest
+                </summary>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs">
+                    From
+                    <input
+                      type="date"
+                      className={input}
+                      min={today}
+                      value={pauseFrom}
+                      onChange={(e) => setPauseFrom(e.target.value)}
+                    />
+                  </label>
+                  <label className="text-xs">
+                    Through
+                    <input
+                      type="date"
+                      className={input}
+                      min={pauseFrom}
+                      value={pauseTo}
+                      onChange={(e) => setPauseTo(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button mt-3 text-sm"
+                  onClick={() => {
+                    if (pauseTo < pauseFrom) {
+                      setError("Pause end must follow its start.");
+                      return;
+                    }
+                    patch({
+                      pauses: [
+                        ...(draft.pauses ?? []),
+                        {
+                          from: pauseFrom,
+                          to: pauseTo,
+                          reason: "Planned pause",
+                        },
+                      ],
+                    });
+                  }}
+                >
+                  Add pause
+                </button>
+                {draft.pauses?.map((p, i) => (
+                  <div className="mt-2 flex items-center gap-2 text-xs" key={i}>
+                    <span className="flex-1">
+                      {p.from} – {p.to}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondary-button text-xs"
+                      onClick={() =>
+                        patch({
+                          pauses: draft.pauses?.filter((_, j) => j !== i),
+                        })
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </details>
+            </>
           )}
           {error && (
             <p role="alert" className="text-sm text-bad">

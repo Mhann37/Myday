@@ -11,10 +11,7 @@ export async function GET(request: Request) {
 
   const format = new URL(request.url).searchParams.get("format") ?? "daily";
   const stamp = new Date().toISOString().slice(0, 10);
-  const [entries, habits] = await Promise.all([
-    getStore().list(),
-    getStore().listHabits(),
-  ]);
+  const { entries, habitData: habits, records } = await getStore().snapshot();
 
   const file = (body: string, name: string, ext: string, type: string) =>
     new NextResponse(body, {
@@ -36,7 +33,17 @@ export async function GET(request: Request) {
       return file(
         JSON.stringify(
           {
-            version: 2,
+            version: 3,
+            records: records
+              .filter(
+                (r) =>
+                  r.key === "preferences" || r.key.startsWith("experiment:"),
+              )
+              .map((r) => ({
+                kind: r.key === "preferences" ? "preferences" : "experiment",
+                key: r.key,
+                data: r.data,
+              })),
             exportedAt: new Date().toISOString(),
             entries,
             ...habits,

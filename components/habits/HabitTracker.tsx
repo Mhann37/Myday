@@ -36,6 +36,9 @@ import {
   type HabitLog,
 } from "@/lib/habits";
 import { Card, cn } from "../ui";
+import { useWorkspace } from "@/lib/workspace-client";
+import { HabitTimer } from "./HabitTimer";
+import { goalOn, excused, paused } from "@/lib/habits";
 import { HabitEditor } from "./HabitEditor";
 
 export function HabitTracker({
@@ -46,6 +49,8 @@ export function HabitTracker({
   initialDate?: string;
 }) {
   const now = useNow();
+  const { preferences } = useWorkspace();
+  const [showCompleted, setShowCompleted] = useState(false);
   const { entries, error: diaryError, refresh: refreshDiary } = useEntries();
   const { data, error, pending, refresh } = useHabits();
   const [editor, setEditor] = useState<Habit | "new" | null>(null);
@@ -88,13 +93,32 @@ export function HabitTracker({
     );
   const today = now.today;
   const days = buildDays(entries);
-  const active = data.habits.filter((h) => !h.archived);
+  const routineOrder = { morning: 0, day: 1, evening: 2, anytime: 3 };
+  const active = data.habits
+    .filter((h) => !h.archived)
+    .sort(
+      (a, b) =>
+        Number(!!b.pinned) - Number(!!a.pinned) ||
+        routineOrder[a.routine ?? "anytime"] -
+          routineOrder[b.routine ?? "anytime"] ||
+        (a.order ?? 0) - (b.order ?? 0) ||
+        a.name.localeCompare(b.name),
+    );
   const list = compact ? active.filter((h) => scheduled(h, today)) : active;
   const complete = list.filter((h) =>
     h.schedule === "weekly"
       ? habitWeek(h, today, data.logs, days).met
-      : (habitValue(h, today, data.logs, days) ?? -1) >= h.target,
+      : (habitValue(h, today, data.logs, days) ?? -1) >=
+        goalOn(h, today).target,
   ).length;
+  const visibleList =
+    compact && preferences.hideCompleted && !showCompleted
+      ? list.filter(
+          (h) =>
+            (habitValue(h, today, data.logs, days) ?? -1) <
+            goalOn(h, today).target,
+        )
+      : list;
   const week = weekStart(
     selectedWeek && selectedWeek <= today ? selectedWeek : today,
   );
@@ -231,29 +255,46 @@ export function HabitTracker({
               </div>
             )}
             <div className="divide-y divide-line px-5">
-              {list.map((habit) => (
-                <HabitRow
-                  key={habit.id}
-                  habit={habit}
-                  today={today}
-                  week={week}
-                  logs={data.logs}
-                  days={days}
-                  compact={compact}
-                  pending={pending.has(`${habit.id}:${today}`)}
-                  onEdit={() => setEditor(habit)}
-                  onDay={(date) => setSelected({ habit, date })}
-                  onLog={(value) =>
-                    void perform(
-                      () => logHabit(habit.id, today, value),
-                      value !== null && value >= habit.target
-                        ? `${habit.name}: target reached. Nicely done.`
-                        : `${habit.name}: saved.`,
-                    )
-                  }
-                />
+              {visibleList.map((habit, index) => (
+                <div key={habit.id}>
+                  {(index === 0 ||
+                    visibleList[index - 1].routine !== habit.routine ||
+                    visibleList[index - 1].pinned !== habit.pinned) && (
+                    <p className="eyebrow pt-4">
+                      {habit.pinned ? "Pinned" : (habit.routine ?? "Anytime")}
+                    </p>
+                  )}
+                  <HabitRow
+                    key={habit.id}
+                    habit={habit}
+                    today={today}
+                    week={week}
+                    logs={data.logs}
+                    days={days}
+                    compact={compact}
+                    pending={pending.has(`${habit.id}:${today}`)}
+                    onEdit={() => setEditor(habit)}
+                    onDay={(date) => setSelected({ habit, date })}
+                    onLog={(value) =>
+                      void perform(
+                        () => logHabit(habit.id, today, value),
+                        value !== null && value >= habit.target
+                          ? `${habit.name}: target reached. Nicely done.`
+                          : `${habit.name}: saved.`,
+                      )
+                    }
+                  />
+                </div>
               ))}
             </div>
+            {compact && preferences.hideCompleted && (
+              <button
+                className="secondary-button m-4 text-sm"
+                onClick={() => setShowCompleted(!showCompleted)}
+              >
+                {showCompleted ? "Hide" : "Show"} completed habits
+              </button>
+            )}
             {list.length === 0 && (
               <p className="p-5 text-sm text-ink-2">
                 A planned rest day. Your next habits are ready when you are.
@@ -341,8 +382,8 @@ export function HabitTracker({
           value={habitValue(selected.habit, selected.date, data.logs, days)}
           busy={pending.has(`${selected.habit.id}:${selected.date}`)}
           onClose={() => setSelected(null)}
-          onSave={async (value) => {
-            await logHabit(selected.habit.id, selected.date, value);
+          onSave={async (value, status) => {
+            await logHabit(selected.habit.id, selected.date, value, status);
             setSelected(null);
             setNotice("Habit log saved.");
           }}
@@ -376,8 +417,10 @@ function HabitRow({
   onLog: (value: number | null) => void;
 }) {
   const currentWeek = compact || week === weekStart(today);
+  const currentGoal = goalOn(habit, today);
   const value = habitValue(habit, today, logs, days);
-  const done = value !== undefined && value >= habit.target;
+  const resting = paused(habit, today) || excused(habit, today, logs);
+  const done = value !== undefined && value >= currentGoal.target;
   const stats = habitWeek(
     habit,
     addDays(week, 6) > today ? today : addDays(week, 6),
@@ -385,13 +428,22 @@ function HabitRow({
     days,
   );
   const streak = habitStreak(habit, today, logs, days);
+  const recentDates = Array.from({ length: 28 }, (_, i) =>
+    addDays(today, -i),
+  ).filter((d) => scheduled(habit, d) && !excused(habit, d, logs));
+  const recorded = recentDates.filter(
+    (d) => habitValue(habit, d, logs, days) !== undefined,
+  ).length;
+  const achieved = recentDates.filter(
+    (d) => (habitValue(habit, d, logs, days) ?? -1) >= goalOn(habit, d).target,
+  ).length;
   return (
     <div className="py-4">
       <div className="flex items-center gap-3">
         {currentWeek ? (
           <button
             type="button"
-            disabled={pending}
+            disabled={pending || resting}
             aria-label={
               habit.kind === "count"
                 ? `Set ${habit.name} amount`
@@ -401,7 +453,7 @@ function HabitRow({
             onClick={() =>
               habit.kind === "count"
                 ? onDay(today)
-                : onLog(done ? 0 : habit.target)
+                : onLog(done ? 0 : currentGoal.target)
             }
             className={cn(
               "grid h-11 w-11 shrink-0 place-items-center rounded-2xl border transition active:scale-95 disabled:opacity-50",
@@ -421,14 +473,18 @@ function HabitRow({
           <h3 className="font-semibold leading-snug">{habit.name}</h3>
           <p className="mt-0.5 text-xs text-ink-2">
             {habit.kind === "count"
-              ? `${value === undefined ? "—" : value.toLocaleString("en-AU")} / ${habit.target.toLocaleString("en-AU")} ${habit.unit}`
-              : habit.schedule === "weekly"
-                ? `${stats.completed} / ${stats.goal} days this week`
-                : done
-                  ? "Done for today"
-                  : value === 0
-                    ? "Not done today"
-                    : "Ready when you are"}
+              ? `${value === undefined ? "—" : value.toLocaleString("en-AU")} / ${currentGoal.target.toLocaleString("en-AU")} ${habit.unit}`
+              : resting
+                ? paused(habit, today)
+                  ? "Paused today"
+                  : "Excused today"
+                : currentGoal.schedule === "weekly"
+                  ? `${stats.completed} / ${stats.goal} days this week`
+                  : done
+                    ? "Done for today"
+                    : value === 0
+                      ? "Not done today"
+                      : "Ready when you are"}
           </p>
           {habit.cue && <p className="mt-1 text-xs text-muted">{habit.cue}</p>}
         </div>
@@ -436,7 +492,7 @@ function HabitRow({
           <div className="flex items-center gap-1">
             <button
               className="icon-button"
-              disabled={pending || value === undefined || value <= 0}
+              disabled={pending || resting || value === undefined || value <= 0}
               aria-label={`Decrease ${habit.name}`}
               onClick={() =>
                 onLog(
@@ -451,7 +507,9 @@ function HabitRow({
             </button>
             <button
               className="icon-button !border-line !bg-surface-2"
-              disabled={pending || (value ?? 0) >= maxHabitValue(habit)}
+              disabled={
+                pending || resting || (value ?? 0) >= maxHabitValue(habit)
+              }
               aria-label={`Add ${habit.step} ${habit.unit} to ${habit.name}`}
               onClick={() =>
                 onLog(
@@ -476,12 +534,16 @@ function HabitRow({
           </button>
         )}
       </div>
+      {habit.timerMinutes && habit.timerMinutes > 0 && !resting ? (
+        <HabitTimer habit={habit} />
+      ) : null}
       {!compact && (
         <>
           <div className="mt-4 grid grid-cols-7 gap-1.5">
             {stats.dates.map((date) => {
               const v = habitValue(habit, date, logs, days);
-              const met = v !== undefined && v >= habit.target;
+              const met = v !== undefined && v >= goalOn(habit, date).target;
+              const excluded = excused(habit, date, logs);
               const available = scheduled(habit, date) && date <= today;
               return (
                 <div key={date} className="text-center">
@@ -492,7 +554,7 @@ function HabitRow({
                     type="button"
                     disabled={!available}
                     onClick={() => onDay(date)}
-                    aria-label={`${habit.name}, ${formatLong(date)}: ${!scheduled(habit, date) ? "rest day" : met ? "complete" : v === undefined ? "not logged" : `${v} ${habit.unit}`}`}
+                    aria-label={`${habit.name}, ${formatLong(date)}: ${!scheduled(habit, date) ? (paused(habit, date) ? "paused" : "rest day") : excluded ? "excused" : met ? "complete" : v === undefined ? "not logged" : `${v} ${habit.unit}`}`}
                     className={cn(
                       "mt-1 grid min-h-11 w-full place-items-center rounded-xl border text-xs font-semibold disabled:opacity-40",
                       met
@@ -502,7 +564,13 @@ function HabitRow({
                     )}
                   >
                     {!scheduled(habit, date) ? (
-                      "—"
+                      paused(habit, date) ? (
+                        "Ⅱ"
+                      ) : (
+                        "—"
+                      )
+                    ) : excluded ? (
+                      "Ⅱ"
                     ) : met ? (
                       <Check size={16} />
                     ) : v === undefined ? (
@@ -515,6 +583,10 @@ function HabitRow({
               );
             })}
           </div>
+          <p className="mt-3 text-xs text-ink-2">
+            Last 28 days · {achieved}/{recentDates.length} eligible days
+            achieved · {recorded} recorded
+          </p>
           <div className="mt-3 flex justify-between gap-2 text-xs text-muted">
             <span>
               {stats.completed}/{stats.goal} days{" "}
@@ -547,7 +619,10 @@ function HabitDay({
   value?: number;
   busy: boolean;
   onClose: () => void;
-  onSave: (value: number | null) => Promise<void>;
+  onSave: (
+    value: number | null,
+    status?: "logged" | "excused",
+  ) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [number, setNumber] = useState(
@@ -557,9 +632,12 @@ function HabitDay({
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-  const save = async (v: number | null) => {
+  const save = async (
+    v: number | null,
+    status: "logged" | "excused" = "logged",
+  ) => {
     try {
-      await onSave(v);
+      await onSave(v, status);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save.");
     }
@@ -641,6 +719,17 @@ function HabitDay({
           </button>
         </div>
       )}
+      <button
+        className="secondary-button mt-4 w-full"
+        disabled={busy}
+        onClick={() => void save(0, "excused")}
+      >
+        Excuse this day
+      </button>
+      <p className="mt-2 text-xs text-muted">
+        Excused days are excluded from goals and comparisons. Clear the log to
+        return to an unrecorded day.
+      </p>
       <button
         type="button"
         disabled={busy}

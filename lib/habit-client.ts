@@ -1,131 +1,73 @@
 "use client";
-
-import { useEffect, useSyncExternalStore } from "react";
-import { goToLogin } from "./client";
-import type { Habit, HabitData, HabitLog } from "./habits";
-
-interface State {
-  data: HabitData | null;
-  error: string | null;
-  pending: ReadonlySet<string>;
-}
-const EMPTY: State = { data: null, error: null, pending: new Set() };
-let state = EMPTY;
-let revision = 0;
-const listeners = new Set<() => void>();
-const emit = (patch: Partial<State>) => {
-  state = { ...state, ...patch };
-  listeners.forEach((fn) => fn());
-};
-const subscribe = (fn: () => void) => {
-  listeners.add(fn);
-  return () => {
-    listeners.delete(fn);
-  };
-};
-let inflight: Promise<void> | null = null;
-
-async function request(method: string, body?: unknown) {
-  const response = await fetch("/api/habits", {
-    method,
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (response.status === 401) {
-    goToLogin();
-    throw new Error("Please sign in again.");
-  }
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok)
-    throw new Error(json.error ?? "Couldn't save your habits. Try again.");
-  return json;
-}
-
-export function refreshHabits(): Promise<void> {
-  inflight ??= (async () => {
-    const version = revision;
-    try {
-      const data: HabitData = await request("GET");
-      if (version === revision && state.pending.size === 0)
-        emit({ data, error: null });
-    } catch (error) {
-      emit({
-        error: error instanceof Error ? error.message : "Couldn't load habits.",
-      });
-    } finally {
-      inflight = null;
-    }
-  })();
-  return inflight;
-}
-
+import { useSyncExternalStore } from "react";
+import {
+  change,
+  recordRevision,
+  useWorkspace,
+  refreshWorkspace,
+} from "./workspace-client";
+import type { Habit } from "./habits";
+import { logicalToday } from "./dates";
+let pending: ReadonlySet<string> = new Set();
+const subs = new Set<() => void>();
+const notify = () => subs.forEach((fn) => fn());
+export const refreshHabits = refreshWorkspace;
 export function useHabits() {
-  const current = useSyncExternalStore(
-    subscribe,
-    () => state,
-    () => EMPTY,
-  );
-  useEffect(() => {
-    void refreshHabits();
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && state.pending.size === 0)
-        void refreshHabits();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, []);
-  return { ...current, refresh: refreshHabits };
-}
-
-export async function saveHabit(habit: Habit) {
-  const result = (await request("PUT", habit)) as { habit: Habit };
-  revision++;
-  const data = state.data ?? { habits: [], logs: [] };
-  emit({
-    data: {
-      ...data,
-      habits: [...data.habits.filter((h) => h.id !== habit.id), result.habit],
+  const s = useWorkspace();
+  const p = useSyncExternalStore(
+    (fn) => {
+      subs.add(fn);
+      return () => {
+        subs.delete(fn);
+      };
     },
-    error: null,
+    () => pending,
+    () => pending,
+  );
+  return {
+    data: s.data?.habitData ?? null,
+    error: s.error,
+    pending: p,
+    refresh: refreshWorkspace,
+  };
+}
+export async function saveHabit(
+  habit: Habit,
+  effectiveFrom = logicalToday(new Date()),
+  expected?: string | null,
+) {
+  const key = `habit:${habit.id}`;
+  await change({
+    kind: "habit",
+    id: crypto.randomUUID(),
+    key,
+    expected: expected === undefined ? recordRevision(key) : expected,
+    data: habit,
+    effectiveFrom,
   });
 }
-
 export async function logHabit(
   habitId: string,
   date: string,
   value: number | null,
+  status: "logged" | "excused" = "logged",
+  source = "manual",
 ) {
-  const key = `${habitId}:${date}`;
-  if (state.pending.has(key) || !state.data) return;
-  const previous = state.data.logs.find(
-    (l) => l.habitId === habitId && l.date === date,
-  );
-  const patchLog = (log?: HabitLog) => {
-    if (!state.data) return;
-    const rest = state.data.logs.filter(
-      (l) => !(l.habitId === habitId && l.date === date),
-    );
-    emit({ data: { ...state.data, logs: log ? [...rest, log] : rest } });
-  };
-  revision++;
-  emit({ pending: new Set([...state.pending, key]), error: null });
-  patchLog(
-    value === null
-      ? undefined
-      : { habitId, date, value, updatedAt: new Date().toISOString() },
-  );
+  const key = `log:${habitId}:${date}`;
+  const row = `${habitId}:${date}`;
+  if (pending.has(row)) return;
+  pending = new Set([...pending, row]);
+  notify();
   try {
-    await request("PATCH", { habitId, date, value });
-  } catch (error) {
-    patchLog(previous);
-    emit({
-      error:
-        error instanceof Error ? error.message : "Couldn't save. Please retry.",
+    await change({
+      kind: "log",
+      id: crypto.randomUUID(),
+      key,
+      expected: recordRevision(key),
+      data: { habitId, date, value, status, source },
     });
-    throw error;
   } finally {
-    revision++;
-    emit({ pending: new Set([...state.pending].filter((p) => p !== key)) });
+    pending = new Set([...pending].filter((p) => p !== row));
+    notify();
   }
 }

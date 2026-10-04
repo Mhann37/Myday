@@ -20,7 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { carriedInjuries, progress, prune, QUESTIONS } from "@/lib/checkin";
 import {
   BEHAVIOUR_FACES,
@@ -31,7 +31,6 @@ import {
   LIFT_FOCUS,
   MEDS,
   MOOD_FACES,
-  WIFE_NAME,
   WIFE_TAGS,
   WORK_TYPES,
 } from "@/lib/config";
@@ -44,6 +43,14 @@ import {
 } from "@/lib/client";
 import { formatLong } from "@/lib/dates";
 import { entryDataSchema, type EntryData, type Period } from "@/lib/schema";
+import {
+  useWorkspace,
+  recordRevision,
+  readDeviceDraft,
+  saveDeviceDraft,
+} from "@/lib/workspace-client";
+import { QUICK_FIELDS } from "@/lib/preferences";
+import { SyncStatus } from "../SyncStatus";
 import { Injuries } from "./Injuries";
 import { NetworkStatus } from "../NetworkStatus";
 import {
@@ -64,6 +71,7 @@ const draftKey = (date: string, period: Period) =>
 
 function readDraft(date: string, period: Period): EntryData | null {
   try {
+    if (localStorage.getItem("myday-offline-enabled")) return null;
     const raw = window.localStorage.getItem(draftKey(date, period));
     const parsed = raw ? entryDataSchema.safeParse(JSON.parse(raw)) : null;
     return parsed?.success ? parsed.data : null;
@@ -74,6 +82,7 @@ function readDraft(date: string, period: Period): EntryData | null {
 
 function writeDraft(date: string, period: Period, data: EntryData | null) {
   try {
+    if (localStorage.getItem("myday-offline-enabled")) return true;
     if (data)
       window.localStorage.setItem(draftKey(date, period), JSON.stringify(data));
     else window.localStorage.removeItem(draftKey(date, period));
@@ -205,6 +214,7 @@ function Shell({
         </div>
       </header>
       <NetworkStatus />
+      <SyncStatus />
       {children}
     </div>
   );
@@ -224,6 +234,13 @@ function FormBody({
   carried: EntryData["injuries"];
 }) {
   const router = useRouter();
+  const workspace = useWorkspace();
+  const WIFE_NAME = workspace.preferences.partnerName;
+  const family = KIDS.map((k) => ({
+    ...k,
+    name: workspace.preferences.childNames[k.key] ?? k.name,
+  }));
+  const baseRevision = useRef(recordRevision(`entry:${date}:${period}`));
   const touched = useRef(false);
   const [full, setFull] = useState(false);
   const [draftStatus, setDraftStatus] = useState(
@@ -236,6 +253,26 @@ function FormBody({
     if (existing) return structuredClone(existing);
     return carried !== undefined ? { injuries: carried } : {};
   });
+  useEffect(() => {
+    if (!workspace.enabled || !workspace.unlocked) return;
+    let live = true;
+    void readDeviceDraft(`${date}:${period}`)
+      .then((draft) => {
+        if (!live || !draft || touched.current) return;
+        const parsed = entryDataSchema.safeParse(draft.data);
+        if (parsed.success) {
+          setData(parsed.data);
+          baseRevision.current = draft.expected;
+          setDraftStatus("Encrypted draft restored from this device");
+        }
+      })
+      .catch(() => {
+        if (live) setDraftStatus("Could not restore the device draft.");
+      });
+    return () => {
+      live = false;
+    };
+  }, [date, period, workspace.enabled, workspace.unlocked]);
   const injuriesCarried = useMemo(
     () => !existing && !readDraft(date, period) && carried !== undefined,
     [existing, carried, date, period],
@@ -250,10 +287,21 @@ function FormBody({
     const stored = writeDraft(date, period, next);
     setDraftStatus(
       stored
-        ? "Draft saved on this device"
+        ? workspace.enabled
+          ? "Draft kept in this open check-in. Save to keep it on device."
+          : "Draft saved on this device"
         : "Device storage unavailable. Keep this page open until you save.",
     );
     setData(next);
+    if (workspace.enabled) {
+      void saveDeviceDraft(`${date}:${period}`, next, baseRevision.current)
+        .then(() => setDraftStatus("Encrypted draft saved on this device"))
+        .catch(() =>
+          setDraftStatus(
+            "Draft kept in this open check-in. Unlock device storage to keep it.",
+          ),
+        );
+    }
   };
 
   // section helpers: merge one field into a nested object
@@ -265,21 +313,9 @@ function FormBody({
       [key]: { ...(data[key] as object | undefined), ...patch },
     } as Partial<EntryData>);
 
-  const quickIds =
-    period === "morning"
-      ? ["mood", "energy", "stress", "sleepHours", "sleepQuality"]
-      : [
-          "mood",
-          "energy",
-          "stress",
-          "lifted",
-          "cardio",
-          "water",
-          "alcohol",
-          "outdoor",
-        ];
+  const quickIds = workspace.preferences[period];
   const quickQuestions = QUESTIONS[period].filter((q) =>
-    quickIds.includes(q.id),
+    quickIds.includes(q.id as never),
   );
   const { answered, total } = full
     ? progress(period, data)
@@ -311,11 +347,20 @@ function FormBody({
     setSaving(true);
     setSaveError(null);
     try {
-      await saveEntry(date, period, parsed.data);
+      await saveEntry(date, period, parsed.data, baseRevision.current);
       writeDraft(date, period, null);
+      if (workspace.enabled)
+        await saveDeviceDraft(`${date}:${period}`, null, baseRevision.current);
       setSaveNotice(
-        `${period === "morning" ? "Morning" : "Night"} check-in saved. One more day of understanding you.`,
+        workspace.enabled
+          ? `${period === "morning" ? "Morning" : "Night"} check-in saved on this device. Sync status shows when it reaches your database.`
+          : `${period === "morning" ? "Morning" : "Night"} check-in saved. One more day of understanding you.`,
       );
+      if (!navigator.onLine) {
+        setSaving(false);
+        setDraftStatus("Saved on this device. Reconnect to sync.");
+        return;
+      }
       router.push("/");
     } catch (err) {
       setSaveError(
@@ -331,8 +376,15 @@ function FormBody({
     if (!window.confirm("Delete this check-in? This can't be undone.")) return;
     setSaving(true);
     try {
-      await deleteEntry(date, period);
+      await deleteEntry(date, period, baseRevision.current);
       writeDraft(date, period, null);
+      if (workspace.enabled)
+        await saveDeviceDraft(`${date}:${period}`, null, baseRevision.current);
+      if (!navigator.onLine) {
+        setSaving(false);
+        setDraftStatus("Saved on this device. Reconnect to sync.");
+        return;
+      }
       router.push("/");
     } catch {
       setSaveError("Couldn't delete. Try again.");
@@ -508,7 +560,14 @@ function FormBody({
       </div>
 
       <main className="space-y-4 px-4 pb-44 pt-4" aria-label="Check-in answers">
-        {period === "morning" ? (
+        {!full ? (
+          <QuickFields
+            ids={quickIds}
+            data={data}
+            update={update}
+            period={period}
+          />
+        ) : period === "morning" ? (
           <>
             <Section title="Sleep" icon={<BedDouble size={20} />}>
               <Question label="Hours slept">
@@ -737,7 +796,7 @@ function FormBody({
                   icon={<Baby size={20} />}
                   hint="How was their behaviour today?"
                 >
-                  {KIDS.map((kid) => (
+                  {family.map((kid) => (
                     <div
                       key={kid.key}
                       className="rounded-2xl border border-line bg-surface-2/40 p-3"
@@ -782,7 +841,10 @@ function FormBody({
                   ))}
                   <Question label="One-on-one time with…" aside="pick any">
                     <Chips
-                      options={KIDS.map((k) => ({ key: k.key, label: k.name }))}
+                      options={family.map((k) => ({
+                        key: k.key,
+                        label: k.name,
+                      }))}
                       value={data.mind?.oneOnOne}
                       onChange={(v) => sec("mind", { oneOnOne: v })}
                       noneLabel="No one"
@@ -1005,5 +1067,116 @@ function FormBody({
         </div>
       </div>
     </Shell>
+  );
+}
+
+function QuickFields({
+  ids,
+  data,
+  update,
+  period,
+}: {
+  ids: readonly string[];
+  data: EntryData;
+  update: (d: Partial<EntryData>) => void;
+  period: Period;
+}) {
+  const sec = <K extends keyof EntryData>(
+    key: K,
+    patch: Partial<NonNullable<EntryData[K]>>,
+  ) => update({ [key]: { ...((data[key] as object) ?? {}), ...patch } });
+  return (
+    <Section
+      title="Your quick check-in"
+      icon={<Smile size={20} />}
+      hint="Your questions. Skip anything you don't want to record."
+    >
+      {ids.map((id) => (
+        <Question
+          key={id}
+          label={QUICK_FIELDS[id as keyof typeof QUICK_FIELDS]}
+        >
+          {id === "mood" || id === "energy" || id === "stress" ? (
+            <ScaleInput
+              ariaLabel={QUICK_FIELDS[id]}
+              faces={id === "mood" ? MOOD_FACES : undefined}
+              value={data.me?.[id]}
+              onChange={(v) => sec("me", { [id]: v })}
+              lowLabel={
+                id === "stress" ? "Calm" : id === "energy" ? "Drained" : "Low"
+              }
+              highLabel={
+                id === "stress"
+                  ? "Maxed out"
+                  : id === "energy"
+                    ? "Charged"
+                    : "Great"
+              }
+            />
+          ) : id === "sleepQuality" ? (
+            <ScaleInput
+              ariaLabel="Sleep quality"
+              value={data.sleep?.quality}
+              onChange={(v) => sec("sleep", { quality: v })}
+              lowLabel="Awful"
+              highLabel="Brilliant"
+            />
+          ) : id === "sleepHours" ? (
+            <Stepper
+              ariaLabel="Hours slept"
+              value={data.sleep?.hours}
+              onChange={(v) => sec("sleep", { hours: v })}
+              step={0.5}
+              min={0}
+              max={24}
+              start={7}
+              unit="hours"
+            />
+          ) : id === "lifted" || id === "cardio" ? (
+            <YesNo
+              ariaLabel={id === "lifted" ? "Lifted weights" : "Did cardio"}
+              value={data.training?.[id]}
+              onChange={(v) => sec("training", { [id]: v })}
+            />
+          ) : id === "water" ? (
+            <Stepper
+              ariaLabel="Glasses of water"
+              value={data.habits?.water}
+              onChange={(v) => sec("habits", { water: v })}
+              max={40}
+              unit="glasses"
+            />
+          ) : id === "alcohol" ? (
+            <Stepper
+              ariaLabel="Alcohol drinks"
+              value={data.habits?.alcohol}
+              onChange={(v) => sec("habits", { alcohol: v })}
+              max={60}
+              unit="drinks"
+            />
+          ) : (
+            <Stepper
+              ariaLabel="Minutes outside"
+              value={data.habits?.outdoorMins}
+              onChange={(v) => sec("habits", { outdoorMins: v })}
+              step={15}
+              max={1440}
+              start={30}
+              unit="min"
+            />
+          )}
+        </Question>
+      ))}
+      {period === "night" && (
+        <Question label="One win from today" aside="optional">
+          <TextArea
+            ariaLabel="One win"
+            placeholder="Something that went well"
+            value={data.mind?.win}
+            onChange={(v) => sec("mind", { win: v })}
+          />
+        </Question>
+      )}
+    </Section>
   );
 }
