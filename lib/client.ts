@@ -40,9 +40,24 @@ export function goToLogin() {
 }
 
 let inflight: Promise<void> | null = null;
+let revision = 0;
+
+let saveNotice = "";
+export function setSaveNotice(message: string) {
+  saveNotice = message;
+  subscribers.forEach((fn) => fn());
+}
+export function useSaveNotice() {
+  return useSyncExternalStore(
+    subscribe,
+    () => saveNotice,
+    () => "",
+  );
+}
 
 export function refreshEntries(): Promise<void> {
   inflight ??= (async () => {
+    const version = revision;
     try {
       const res = await fetch("/api/entries", { cache: "no-store" });
       if (res.status === 401) {
@@ -50,10 +65,13 @@ export function refreshEntries(): Promise<void> {
         return;
       }
       const json = (await res.json()) as { entries?: Entry[]; error?: string };
-      if (!res.ok || !json.entries) throw new Error(json.error ?? "Couldn't load your diary");
-      emit({ entries: json.entries, error: null });
+      if (!res.ok || !json.entries)
+        throw new Error(json.error ?? "Couldn't load your diary");
+      if (version === revision) emit({ entries: json.entries, error: null });
     } catch (err) {
-      emit({ error: err instanceof Error ? err.message : "Couldn't load your diary" });
+      emit({
+        error: err instanceof Error ? err.message : "Couldn't load your diary",
+      });
     } finally {
       inflight = null;
     }
@@ -62,19 +80,50 @@ export function refreshEntries(): Promise<void> {
 }
 
 export function useEntries() {
-  const s = useSyncExternalStore(subscribe, () => state, () => EMPTY);
+  const s = useSyncExternalStore(
+    subscribe,
+    () => state,
+    () => EMPTY,
+  );
   useEffect(() => {
     void refreshEntries();
+    const visible = () => {
+      if (document.visibilityState === "visible") void refreshEntries();
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => document.removeEventListener("visibilitychange", visible);
   }, []);
-  return { entries: s.entries, error: s.error, loading: s.entries === null && s.error === null, refresh: refreshEntries };
+  return {
+    entries: s.entries,
+    error: s.error,
+    loading: s.entries === null && s.error === null,
+    refresh: refreshEntries,
+  };
 }
 
 function upsertLocal(entry: Entry) {
-  const rest = (state.entries ?? []).filter((e) => !(e.date === entry.date && e.period === entry.period));
-  emit({ entries: [...rest, entry].sort((a, b) => (a.date === b.date ? (a.period < b.period ? 1 : -1) : a.date < b.date ? -1 : 1)) });
+  revision++;
+  const rest = (state.entries ?? []).filter(
+    (e) => !(e.date === entry.date && e.period === entry.period),
+  );
+  emit({
+    entries: [...rest, entry].sort((a, b) =>
+      a.date === b.date
+        ? a.period < b.period
+          ? 1
+          : -1
+        : a.date < b.date
+          ? -1
+          : 1,
+    ),
+  });
 }
 
-export async function saveEntry(date: string, period: Period, data: EntryData): Promise<Entry> {
+export async function saveEntry(
+  date: string,
+  period: Period,
+  data: EntryData,
+): Promise<Entry> {
   const res = await fetch("/api/entries", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -91,9 +140,20 @@ export async function saveEntry(date: string, period: Period, data: EntryData): 
 }
 
 export async function deleteEntry(date: string, period: Period): Promise<void> {
-  const res = await fetch(`/api/entries?date=${date}&period=${period}`, { method: "DELETE" });
+  const res = await fetch(`/api/entries?date=${date}&period=${period}`, {
+    method: "DELETE",
+  });
+  if (res.status === 401) {
+    goToLogin();
+    throw new Error("Please sign in again");
+  }
   if (!res.ok) throw new Error("Couldn't delete");
-  emit({ entries: (state.entries ?? []).filter((e) => !(e.date === date && e.period === period)) });
+  revision++;
+  emit({
+    entries: (state.entries ?? []).filter(
+      (e) => !(e.date === date && e.period === period),
+    ),
+  });
 }
 
 // ---------------------------------------------------------------- the clock
@@ -115,13 +175,31 @@ function readNow(): Now {
   const calendar = localDateString(d);
   const key = `${calendar}:${hour}`;
   if (!cachedNow || cachedNow.key !== key) {
-    cachedNow = { key, value: { today: hour < DAY_ROLLOVER_HOUR ? addDays(calendar, -1) : calendar, hour } };
+    cachedNow = {
+      key,
+      value: {
+        today: hour < DAY_ROLLOVER_HOUR ? addDays(calendar, -1) : calendar,
+        hour,
+      },
+    };
   }
   return cachedNow.value;
 }
 
-const noopSubscribe = () => () => {};
+const subscribeClock = (fn: () => void) => {
+  const timer = window.setInterval(fn, 30_000);
+  const visible = () => {
+    if (document.visibilityState === "visible") fn();
+  };
+  document.addEventListener("visibilitychange", visible);
+  window.addEventListener("focus", fn);
+  return () => {
+    window.clearInterval(timer);
+    document.removeEventListener("visibilitychange", visible);
+    window.removeEventListener("focus", fn);
+  };
+};
 
 export function useNow(): Now | null {
-  return useSyncExternalStore(noopSubscribe, readNow, () => null);
+  return useSyncExternalStore(subscribeClock, readNow, () => null);
 }

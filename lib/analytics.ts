@@ -66,12 +66,15 @@ export interface DayRecord {
   /** worst injury severity that day: 0 = none, undefined = not answered */
   injury?: number;
   injuryParts: string[];
+  habitTargets?: Record<string, boolean | undefined>;
 }
 
 type N = number | undefined;
 
 const mean = (xs: N[]): N => {
-  const v = xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  const v = xs.filter(
+    (x): x is number => typeof x === "number" && Number.isFinite(x),
+  );
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : undefined;
 };
 
@@ -107,7 +110,9 @@ export function buildDays(entries: Entry[]): DayRecord[] {
     const wifeAnswered = am?.wife !== undefined || pm?.wife !== undefined;
 
     const taken = pm?.meds?.taken;
-    const injuryLists = [am?.injuries, pm?.injuries].filter((x): x is NonNullable<typeof x> => x !== undefined);
+    const injuryLists = [am?.injuries, pm?.injuries].filter(
+      (x): x is NonNullable<typeof x> => x !== undefined,
+    );
     const injuryAll = injuryLists.flat();
 
     const lifted = pm?.training?.lifted;
@@ -136,7 +141,9 @@ export function buildDays(entries: Entry[]): DayRecord[] {
 
       wifeMood: mean([am?.wife?.mood, pm?.wife?.mood]),
       wifeMoodPm: pm?.wife?.mood,
-      wifeUnwell: wifeAnswered ? wifeTags.includes("sick") || wifeTags.includes("flat") : undefined,
+      wifeUnwell: wifeAnswered
+        ? wifeTags.includes("sick") || wifeTags.includes("flat")
+        : undefined,
 
       kids,
       kidsAvg: mean(Object.values(kids)),
@@ -144,7 +151,12 @@ export function buildDays(entries: Entry[]): DayRecord[] {
       lifted,
       cardio,
       cardioMins: pm?.training?.cardioMins,
-      exercised: lifted === undefined && cardio === undefined ? undefined : !!(lifted || cardio),
+      exercised:
+        lifted === true || cardio === true
+          ? true
+          : lifted === false && cardio === false
+            ? false
+            : undefined,
 
       work: pm?.work?.type,
       workHours: pm?.work?.hours,
@@ -153,7 +165,9 @@ export function buildDays(entries: Entry[]): DayRecord[] {
       nurofen: taken ? taken.includes("nurofen") : undefined,
       weightLoss: taken ? taken.includes("weightloss") : undefined,
       otherMed: taken ? taken.includes("other") : undefined,
-      painMed: taken ? taken.includes("panadol") || taken.includes("nurofen") : undefined,
+      painMed: taken
+        ? taken.includes("panadol") || taken.includes("nurofen")
+        : undefined,
 
       alcohol: pm?.habits?.alcohol,
       caffeine: pm?.habits?.caffeine,
@@ -166,7 +180,9 @@ export function buildDays(entries: Entry[]): DayRecord[] {
       oneOnOne: pm?.mind?.oneOnOne?.length,
       screenHours: pm?.mind?.screenHours,
 
-      injury: injuryLists.length ? Math.max(0, ...injuryAll.map((i) => i.severity)) : undefined,
+      injury: injuryLists.length
+        ? Math.max(0, ...injuryAll.map((i) => i.severity))
+        : undefined,
       injuryParts: [...new Set(injuryAll.map((i) => i.part))],
     };
   });
@@ -203,7 +219,7 @@ interface Outcome {
   minDiff: number;
 }
 
-interface Driver {
+export interface Driver {
   id: string;
   /** reads after "on days" / "after days", e.g. "you lifted weights" */
   phrase: string;
@@ -217,44 +233,218 @@ const scale = (x: number) => Math.abs(x).toFixed(1);
 const hours = (x: number) => `${Math.abs(x).toFixed(1)}h`;
 
 export const OUTCOMES: Outcome[] = [
-  { id: "mood", label: "your end-of-day mood", better: 1, lag: 0, get: (d) => d.moodPm, fmt: scale, minDiff: 0.3 },
-  { id: "energy", label: "your end-of-day energy", better: 1, lag: 0, get: (d) => d.energyPm, fmt: scale, minDiff: 0.3 },
-  { id: "stress", label: "your end-of-day stress", better: -1, lag: 0, get: (d) => d.stressPm, fmt: scale, minDiff: 0.3 },
-  { id: "wellbeing", label: "your day score", better: 1, lag: 0, get: (d) => d.wellbeingPm, fmt: pts, minDiff: 8 },
-  { id: "kids", label: "the kids' behaviour", better: 1, lag: 0, get: (d) => d.kidsAvg, fmt: scale, minDiff: 0.3 },
-  { id: "wifeMood", label: `${WIFE_NAME}'s mood`, better: 1, lag: 0, get: (d) => d.wifeMoodPm, fmt: scale, minDiff: 0.3 },
-  { id: "nextMood", label: "your next-morning mood", better: 1, lag: 1, get: (d) => d.moodAm, fmt: scale, minDiff: 0.3 },
-  { id: "nextEnergy", label: "your next-morning energy", better: 1, lag: 1, get: (d) => d.energyAm, fmt: scale, minDiff: 0.3 },
-  { id: "nextStress", label: "your next-morning stress", better: -1, lag: 1, get: (d) => d.stressAm, fmt: scale, minDiff: 0.3 },
-  { id: "nextSleepQ", label: "your sleep quality that night", better: 1, lag: 1, when: "on days", get: (d) => d.sleepQuality, fmt: scale, minDiff: 0.3 },
-  { id: "nextSleepH", label: "your sleep that night", better: 1, lag: 1, when: "on days", get: (d) => d.sleepHours, fmt: hours, minDiff: 0.4 },
+  {
+    id: "mood",
+    label: "your end-of-day mood",
+    better: 1,
+    lag: 0,
+    get: (d) => d.moodPm,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "energy",
+    label: "your end-of-day energy",
+    better: 1,
+    lag: 0,
+    get: (d) => d.energyPm,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "stress",
+    label: "your end-of-day stress",
+    better: -1,
+    lag: 0,
+    get: (d) => d.stressPm,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "wellbeing",
+    label: "your day score",
+    better: 1,
+    lag: 0,
+    get: (d) => d.wellbeingPm,
+    fmt: pts,
+    minDiff: 8,
+  },
+  {
+    id: "kids",
+    label: "the kids' behaviour",
+    better: 1,
+    lag: 0,
+    get: (d) => d.kidsAvg,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "wifeMood",
+    label: `${WIFE_NAME}'s mood`,
+    better: 1,
+    lag: 0,
+    get: (d) => d.wifeMoodPm,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "nextMood",
+    label: "your next-morning mood",
+    better: 1,
+    lag: 1,
+    get: (d) => d.moodAm,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "nextEnergy",
+    label: "your next-morning energy",
+    better: 1,
+    lag: 1,
+    get: (d) => d.energyAm,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "nextStress",
+    label: "your next-morning stress",
+    better: -1,
+    lag: 1,
+    get: (d) => d.stressAm,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "nextSleepQ",
+    label: "your sleep quality that night",
+    better: 1,
+    lag: 1,
+    when: "on days",
+    get: (d) => d.sleepQuality,
+    fmt: scale,
+    minDiff: 0.3,
+  },
+  {
+    id: "nextSleepH",
+    label: "your sleep that night",
+    better: 1,
+    lag: 1,
+    when: "on days",
+    get: (d) => d.sleepHours,
+    fmt: hours,
+    minDiff: 0.4,
+  },
 ];
 
-const known = (x: N, fn: (v: number) => boolean): boolean | undefined => (x === undefined ? undefined : fn(x));
+const known = (x: N, fn: (v: number) => boolean): boolean | undefined =>
+  x === undefined ? undefined : fn(x);
 
 export const DRIVERS: Driver[] = [
   { id: "lifted", phrase: "you lifted weights", test: (d) => d.lifted },
   { id: "cardio", phrase: "you did cardio", test: (d) => d.cardio },
-  { id: "exercised", phrase: "you exercised (lifting or cardio)", test: (d) => d.exercised },
-  { id: "wfh", phrase: "you worked from home", test: (d) => (d.work === undefined ? undefined : d.work === "wfh") },
-  { id: "office", phrase: "you worked at the office", test: (d) => (d.work === undefined ? undefined : d.work === "office") },
-  { id: "dayOff", phrase: "you weren't working", test: (d) => (d.work === undefined ? undefined : d.work === "none") },
-  { id: "longWork", phrase: "you worked 9+ hours", test: (d) => known(d.workHours, (h) => h >= 9) },
-  { id: "alcohol", phrase: "you had alcohol", test: (d) => known(d.alcohol, (n) => n >= 1) },
-  { id: "caffeine", phrase: "you had 3+ caffeinated drinks", test: (d) => known(d.caffeine, (n) => n >= 3) },
-  { id: "water", phrase: "you drank 8+ glasses of water", test: (d) => known(d.water, (n) => n >= 8) },
-  { id: "junk", phrase: "you ate a lot of junk food", test: (d) => known(d.junk, (n) => n >= 2) },
-  { id: "steps", phrase: "you hit 8,000+ steps", test: (d) => known(d.steps, (n) => n >= 8000) },
-  { id: "outdoors", phrase: "you spent 30+ minutes outside", test: (d) => known(d.outdoorMins, (n) => n >= 30) },
-  { id: "screens", phrase: "you had 3+ hours of screen time", test: (d) => known(d.screenHours, (n) => n >= 3) },
-  { id: "wifeTime", phrase: `you had quality time with ${WIFE_NAME.toLowerCase()}`, test: (d) => d.wifeTime },
-  { id: "oneOnOne", phrase: "you spent one-on-one time with a kid", test: (d) => known(d.oneOnOne, (n) => n >= 1) },
-  { id: "painMed", phrase: "you took Panadol or Nurofen", test: (d) => d.painMed },
-  { id: "weightLoss", phrase: "you took your weight-loss medication", test: (d) => d.weightLoss },
-  { id: "injury", phrase: "you had an injury", test: (d) => known(d.injury, (n) => n > 0) },
-  { id: "sleep7", phrase: "you slept 7+ hours", test: (d) => known(d.sleepHours, (h) => h >= 7), skip: ["nextSleepH", "nextSleepQ"] },
-  { id: "sleep6", phrase: "you slept under 6 hours", test: (d) => known(d.sleepHours, (h) => h < 6), skip: ["nextSleepH", "nextSleepQ"] },
-  { id: "goodSleep", phrase: "you rated your sleep 4 or 5", test: (d) => known(d.sleepQuality, (q) => q >= 4), skip: ["nextSleepH", "nextSleepQ"] },
+  {
+    id: "exercised",
+    phrase: "you exercised (lifting or cardio)",
+    test: (d) => d.exercised,
+  },
+  {
+    id: "wfh",
+    phrase: "you worked from home",
+    test: (d) => (d.work === undefined ? undefined : d.work === "wfh"),
+  },
+  {
+    id: "office",
+    phrase: "you worked at the office",
+    test: (d) => (d.work === undefined ? undefined : d.work === "office"),
+  },
+  {
+    id: "dayOff",
+    phrase: "you weren't working",
+    test: (d) => (d.work === undefined ? undefined : d.work === "none"),
+  },
+  {
+    id: "longWork",
+    phrase: "you worked 9+ hours",
+    test: (d) => known(d.workHours, (h) => h >= 9),
+  },
+  {
+    id: "alcohol",
+    phrase: "you had alcohol",
+    test: (d) => known(d.alcohol, (n) => n >= 1),
+  },
+  {
+    id: "caffeine",
+    phrase: "you had 3+ caffeinated drinks",
+    test: (d) => known(d.caffeine, (n) => n >= 3),
+  },
+  {
+    id: "water",
+    phrase: "you drank 8+ glasses of water",
+    test: (d) => known(d.water, (n) => n >= 8),
+  },
+  {
+    id: "junk",
+    phrase: "you ate a lot of junk food",
+    test: (d) => known(d.junk, (n) => n >= 2),
+  },
+  {
+    id: "steps",
+    phrase: "you hit 8,000+ steps",
+    test: (d) => known(d.steps, (n) => n >= 8000),
+  },
+  {
+    id: "outdoors",
+    phrase: "you spent 30+ minutes outside",
+    test: (d) => known(d.outdoorMins, (n) => n >= 30),
+  },
+  {
+    id: "screens",
+    phrase: "you had 3+ hours of screen time",
+    test: (d) => known(d.screenHours, (n) => n >= 3),
+  },
+  {
+    id: "wifeTime",
+    phrase: `you had quality time with ${WIFE_NAME.toLowerCase()}`,
+    test: (d) => d.wifeTime,
+  },
+  {
+    id: "oneOnOne",
+    phrase: "you spent one-on-one time with a kid",
+    test: (d) => known(d.oneOnOne, (n) => n >= 1),
+  },
+  {
+    id: "painMed",
+    phrase: "you took Panadol or Nurofen",
+    test: (d) => d.painMed,
+  },
+  {
+    id: "weightLoss",
+    phrase: "you took your weight-loss medication",
+    test: (d) => d.weightLoss,
+  },
+  {
+    id: "injury",
+    phrase: "you had an injury",
+    test: (d) => known(d.injury, (n) => n > 0),
+  },
+  {
+    id: "sleep7",
+    phrase: "you slept 7+ hours",
+    test: (d) => known(d.sleepHours, (h) => h >= 7),
+    skip: ["nextSleepH", "nextSleepQ"],
+  },
+  {
+    id: "sleep6",
+    phrase: "you slept under 6 hours",
+    test: (d) => known(d.sleepHours, (h) => h < 6),
+    skip: ["nextSleepH", "nextSleepQ"],
+  },
+  {
+    id: "goodSleep",
+    phrase: "you rated your sleep 4 or 5",
+    test: (d) => known(d.sleepQuality, (q) => q >= 4),
+    skip: ["nextSleepH", "nextSleepQ"],
+  },
   {
     id: "wifeUnwell",
     phrase: `${WIFE_NAME.toLowerCase()} was sick or flat`,
@@ -331,11 +521,14 @@ interface Comparison {
 }
 
 /** Every driver/outcome comparison with enough data, each with its p and FDR-adjusted q. */
-export function runComparisons(days: DayRecord[]): Comparison[] {
+export function runComparisons(
+  days: DayRecord[],
+  additionalDrivers: Driver[] = [],
+): Comparison[] {
   const byDate = new Map(days.map((d) => [d.date, d]));
   const candidates: Omit<Comparison, "q">[] = [];
 
-  for (const driver of DRIVERS) {
+  for (const driver of [...DRIVERS, ...additionalDrivers]) {
     for (const outcome of OUTCOMES) {
       if (driver.skip?.includes(outcome.id)) continue;
 
@@ -344,7 +537,8 @@ export function runComparisons(days: DayRecord[]): Comparison[] {
       for (const day of days) {
         const flag = driver.test(day);
         if (flag === undefined) continue;
-        const target = outcome.lag === 0 ? day : byDate.get(addDays(day.date, 1));
+        const target =
+          outcome.lag === 0 ? day : byDate.get(addDays(day.date, 1));
         const value = target ? outcome.get(target) : undefined;
         if (value === undefined) continue;
         (flag ? withG : withoutG).push(value);
@@ -355,7 +549,15 @@ export function runComparisons(days: DayRecord[]): Comparison[] {
       const b = stats(withoutG);
       const result = compareGroups(a, b);
       if (!result) continue;
-      candidates.push({ driver, outcome, a, b, diff: result.diff, t: result.t, p: result.p });
+      candidates.push({
+        driver,
+        outcome,
+        a,
+        b,
+        diff: result.diff,
+        t: result.t,
+        p: result.p,
+      });
     }
   }
 
@@ -364,15 +566,24 @@ export function runComparisons(days: DayRecord[]): Comparison[] {
   return candidates.map((c, k) => ({ ...c, q: q[k] }));
 }
 
-export function computeInsights(days: DayRecord[]): Insight[] {
+export function computeInsights(
+  days: DayRecord[],
+  additionalDrivers: Driver[] = [],
+): Insight[] {
   if (days.length < MIN_DAYS_FOR_INSIGHTS) return [];
   const out: Insight[] = [];
 
-  for (const c of runComparisons(days)) {
+  for (const c of runComparisons(days, additionalDrivers)) {
     if (Math.abs(c.diff) < c.outcome.minDiff || c.q > MAX_Q) continue;
     const nMin = Math.min(c.a.n, c.b.n);
-    const confidence: Confidence = c.q <= 0.01 && nMin >= 10 ? "solid" : c.q <= 0.05 && nMin >= 6 ? "forming" : "early";
-    const when = c.outcome.when ?? (c.outcome.lag === 0 ? "on days" : "after days");
+    const confidence: Confidence =
+      c.q <= 0.01 && nMin >= 10
+        ? "solid"
+        : c.q <= 0.05 && nMin >= 6
+          ? "forming"
+          : "early";
+    const when =
+      c.outcome.when ?? (c.outcome.lag === 0 ? "on days" : "after days");
     out.push({
       id: `${c.driver.id}:${c.outcome.id}`,
       driverId: c.driver.id,
@@ -428,7 +639,9 @@ export function outcomeFormat(outcomeId: string, value: number): string {
 /** Average day score by weekday (0 = Mon). Returns undefined entries when no data. */
 export function weekdayPattern(days: DayRecord[]): { avg: N; n: number }[] {
   const buckets: number[][] = Array.from({ length: 7 }, () => []);
-  for (const d of days) if (d.wellbeing !== undefined) buckets[weekdayIndex(d.date)].push(d.wellbeing);
+  for (const d of days)
+    if (d.wellbeing !== undefined)
+      buckets[weekdayIndex(d.date)].push(d.wellbeing);
   return buckets.map((b) => ({ avg: mean(b), n: b.length }));
 }
 
@@ -437,7 +650,10 @@ export interface Rate {
   of: number;
 }
 
-export function rate(days: DayRecord[], pick: (d: DayRecord) => boolean | undefined): Rate {
+export function rate(
+  days: DayRecord[],
+  pick: (d: DayRecord) => boolean | undefined,
+): Rate {
   let yes = 0;
   let of = 0;
   for (const d of days) {
@@ -454,7 +670,9 @@ export function rate(days: DayRecord[], pick: (d: DayRecord) => boolean | undefi
  * no data in its window stays undefined, so a long break in logging shows as a break.
  */
 export function rollingMean(values: N[], window = 7): N[] {
-  return values.map((_, i) => mean(values.slice(Math.max(0, i - window + 1), i + 1)));
+  return values.map((_, i) =>
+    mean(values.slice(Math.max(0, i - window + 1), i + 1)),
+  );
 }
 
 export function average(days: DayRecord[], pick: (d: DayRecord) => N): N {
@@ -469,10 +687,17 @@ export interface InjurySummary {
 }
 
 export function injurySummary(entries: Entry[]): InjurySummary[] {
-  const map = new Map<string, { dates: Set<string>; worst: number; last: string }>();
+  const map = new Map<
+    string,
+    { dates: Set<string>; worst: number; last: string }
+  >();
   for (const e of entries) {
     for (const i of e.data.injuries ?? []) {
-      const cur = map.get(i.part) ?? { dates: new Set<string>(), worst: 0, last: "" };
+      const cur = map.get(i.part) ?? {
+        dates: new Set<string>(),
+        worst: 0,
+        last: "",
+      };
       cur.dates.add(e.date);
       cur.worst = Math.max(cur.worst, i.severity);
       if (e.date > cur.last) cur.last = e.date;
@@ -480,18 +705,34 @@ export function injurySummary(entries: Entry[]): InjurySummary[] {
     }
   }
   return [...map.entries()]
-    .map(([part, v]) => ({ part, days: v.dates.size, worst: v.worst, lastSeen: v.last }))
+    .map(([part, v]) => ({
+      part,
+      days: v.dates.size,
+      worst: v.worst,
+      lastSeen: v.last,
+    }))
     .sort((a, b) => b.days - a.days);
 }
 
 // ------------------------------------------------------------------ export
 
-export const DAILY_COLUMNS: { key: string; get: (d: DayRecord) => string | number | boolean | undefined }[] = [
+export const DAILY_COLUMNS: {
+  key: string;
+  get: (d: DayRecord) => string | number | boolean | undefined;
+}[] = [
   { key: "date", get: (d) => d.date },
-  { key: "weekday", get: (d) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][weekdayIndex(d.date)] },
+  {
+    key: "weekday",
+    get: (d) =>
+      ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][weekdayIndex(d.date)],
+  },
   { key: "morning_logged", get: (d) => d.hasMorning },
   { key: "night_logged", get: (d) => d.hasNight },
-  { key: "day_score", get: (d) => (d.wellbeing === undefined ? undefined : Math.round(d.wellbeing)) },
+  {
+    key: "day_score",
+    get: (d) =>
+      d.wellbeing === undefined ? undefined : Math.round(d.wellbeing),
+  },
   { key: "mood_am", get: (d) => d.moodAm },
   { key: "energy_am", get: (d) => d.energyAm },
   { key: "stress_am", get: (d) => d.stressAm },
@@ -502,7 +743,10 @@ export const DAILY_COLUMNS: { key: string; get: (d: DayRecord) => string | numbe
   { key: "sleep_quality", get: (d) => d.sleepQuality },
   { key: "wife_mood", get: (d) => d.wifeMood },
   { key: "wife_unwell", get: (d) => d.wifeUnwell },
-  ...KIDS.map((k) => ({ key: `${k.key}_behaviour`, get: (d: DayRecord) => d.kids[k.key] })),
+  ...KIDS.map((k) => ({
+    key: `${k.key}_behaviour`,
+    get: (d: DayRecord) => d.kids[k.key],
+  })),
   { key: "kids_avg", get: (d) => d.kidsAvg },
   { key: "lifted", get: (d) => d.lifted },
   { key: "cardio", get: (d) => d.cardio },

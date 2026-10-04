@@ -13,14 +13,14 @@
   --surface-2: #efe8d9;
   --ink: #1e1b16;
   --ink-2: #5d574b;
-  --muted: #8b8476;
+  --muted: #655e52;
   --line: rgba(30, 27, 22, 0.1);
 
-  --accent: #bf6616;
-  --accent-soft: #f8e6cf;
+  --accent: #2e6651;
+  --accent-soft: #e2eee5;
   --on-accent: #ffffff;
 
-  --morning: #bf6616;
+  --morning: #995012;
   --morning-soft: #f8e6cf;
   --night: #3d4f94;
   --night-soft: #dde3f6;
@@ -42,7 +42,7 @@
   --heat-4: #104281;
   --heat-text-0: #0f1a2b;
   --heat-text-1: #0f1a2b;
-  --heat-text-2: #ffffff;
+  --heat-text-2: #000000;
   --heat-text-3: #ffffff;
   --heat-text-4: #ffffff;
   --heat-empty: #ece4d4;
@@ -56,12 +56,12 @@
     --surface-2: #252a38;
     --ink: #f3efe6;
     --ink-2: #bcb7aa;
-    --muted: #8c909c;
+    --muted: #a2a6b2;
     --line: rgba(255, 255, 255, 0.1);
 
-    --accent: #f0a653;
-    --accent-soft: #3a2c1a;
-    --on-accent: #1a1208;
+    --accent: #a0d3b9;
+    --accent-soft: #233c32;
+    --on-accent: #12271d;
 
     --morning: #f0a653;
     --morning-soft: #3a2c1a;
@@ -96,6 +96,11 @@
   --accent-soft: var(--night-soft);
 }
 
+[data-period="morning"] {
+  --accent: var(--morning);
+  --accent-soft: var(--morning-soft);
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -113,7 +118,8 @@
   --color-night-soft: var(--night-soft);
   --color-good: var(--good);
   --color-bad: var(--bad);
-  --font-sans: var(--font-figtree), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans:
+    var(--font-figtree), system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-serif: var(--font-fraunces), Georgia, "Times New Roman", serif;
 }
 
@@ -138,8 +144,17 @@ body::before {
   pointer-events: none;
   z-index: 0;
   opacity: 0.35;
-  background-image: radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--morning) 10%, transparent), transparent 45%),
-    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--night) 10%, transparent), transparent 50%);
+  background-image:
+    radial-gradient(
+      circle at 20% 0%,
+      color-mix(in srgb, var(--morning) 10%, transparent),
+      transparent 45%
+    ),
+    radial-gradient(
+      circle at 100% 100%,
+      color-mix(in srgb, var(--night) 10%, transparent),
+      transparent 50%
+    );
 }
 
 #app-root {
@@ -186,6 +201,14 @@ textarea {
   .rise {
     animation: none;
   }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 .safe-bottom {
@@ -195,4 +218,77 @@ textarea {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.primary-button,
+.secondary-button,
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  border-radius: 12px;
+  font-weight: 600;
+  transition:
+    background-color 150ms,
+    transform 150ms;
+  cursor: pointer;
+}
+.primary-button {
+  background: var(--accent);
+  color: var(--on-accent);
+  padding: 12px 20px;
+}
+.secondary-button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  padding: 9px 16px;
+}
+.icon-button {
+  width: 44px;
+  flex-shrink: 0;
+  color: var(--ink-2);
+}
+.primary-button:hover {
+  filter: brightness(1.08);
+}
+.secondary-button:hover,
+.icon-button:hover {
+  background: var(--surface-2);
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.modal {
+  max-height: calc(100dvh - 2rem);
+  overscroll-behavior: contain;
+}
+.modal::backdrop {
+  background: rgba(18, 30, 23, 0.45);
+  backdrop-filter: blur(4px);
+}
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  transform: translateY(-150%);
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+p,
+h1,
+h2,
+h3 {
+  overflow-wrap: anywhere;
 }

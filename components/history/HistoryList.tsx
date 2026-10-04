@@ -6,18 +6,30 @@ import { useMemo, useState } from "react";
 import { buildDays, type DayRecord } from "@/lib/analytics";
 import { summaryChips } from "@/lib/checkin";
 import { useEntries, useNow } from "@/lib/client";
-import { addDays, dateRange, formatDayMonth, formatWeekday, relativeDayLabel } from "@/lib/dates";
+import {
+  addDays,
+  dateRange,
+  formatDayMonth,
+  formatWeekday,
+  relativeDayLabel,
+} from "@/lib/dates";
 import { heatColor, heatText } from "@/lib/format";
 import type { Entry, Period } from "@/lib/schema";
 import { cn } from "../ui";
+import { useHabits } from "@/lib/habit-client";
+import { enrichDays } from "@/lib/habit-analytics";
 
 const PAGE = 30;
 
 export function HistoryList() {
   const now = useNow();
   const { entries, error, refresh } = useEntries();
+  const { data: habitData } = useHabits();
   const [span, setSpan] = useState(PAGE);
-  const days = useMemo(() => (entries ? buildDays(entries) : []), [entries]);
+  const days = useMemo(
+    () => enrichDays(entries ? buildDays(entries) : [], habitData),
+    [entries, habitData],
+  );
 
   if (!now || !entries) {
     return (
@@ -25,12 +37,20 @@ export function HistoryList() {
         {error ? (
           <div className="rounded-2xl border border-line bg-surface p-4">
             <p className="mb-3 text-bad">{error}</p>
-            <button onClick={() => void refresh()} className="rounded-xl bg-accent px-4 py-2 font-semibold text-on-accent">
+            <button
+              onClick={() => void refresh()}
+              className="rounded-xl bg-accent px-4 py-2 font-semibold text-on-accent"
+            >
               Try again
             </button>
           </div>
         ) : (
-          [0, 1, 2, 3].map((i) => <div key={i} className="h-24 animate-pulse rounded-3xl bg-surface-2/60" />)
+          [0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-24 animate-pulse rounded-3xl bg-surface-2/60"
+            />
+          ))
         )}
       </div>
     );
@@ -41,7 +61,9 @@ export function HistoryList() {
   const from = addDays(today, -(span - 1));
   const rows = dateRange(from < first ? first : from, today).reverse();
   const byDate = new Map(days.map((d) => [d.date, d]));
-  const entryMap = new Map<string, Entry>(entries.map((e) => [`${e.date}:${e.period}`, e]));
+  const entryMap = new Map<string, Entry>(
+    entries.map((e) => [`${e.date}:${e.period}`, e]),
+  );
   const hasOlder = first < from;
 
   return (
@@ -52,7 +74,26 @@ export function HistoryList() {
         </p>
       )}
       {rows.map((date) => (
-        <DayRow key={date} date={date} today={today} day={byDate.get(date)} entryMap={entryMap} />
+        <div key={date}>
+          <DayRow
+            date={date}
+            today={today}
+            day={byDate.get(date)}
+            entryMap={entryMap}
+          />
+          {habitData?.logs.some((l) => l.date === date) && (
+            <Link
+              href={`/habits?date=${date}`}
+              className="ml-4 mt-1.5 inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-accent"
+            >
+              {habitData.logs.filter((l) => l.date === date).length} habit log
+              {habitData.logs.filter((l) => l.date === date).length !== 1
+                ? "s"
+                : ""}{" "}
+              · view or edit →
+            </Link>
+          )}
+        </div>
       ))}
       {hasOlder && (
         <button
@@ -66,34 +107,64 @@ export function HistoryList() {
   );
 }
 
-function DayRow({ date, today, day, entryMap }: { date: string; today: string; day: DayRecord | undefined; entryMap: Map<string, Entry> }) {
+function DayRow({
+  date,
+  today,
+  day,
+  entryMap,
+}: {
+  date: string;
+  today: string;
+  day: DayRecord | undefined;
+  entryMap: Map<string, Entry>;
+}) {
   const am = entryMap.get(`${date}:morning`);
   const pm = entryMap.get(`${date}:night`);
   const chips = [
-    ...(am ? summaryChips(am.data, "morning").filter((c) => c.includes("sleep")) : []),
+    ...(am
+      ? summaryChips(am.data, "morning").filter((c) => c.includes("sleep"))
+      : []),
     ...(pm ? summaryChips(pm.data, "night") : []),
   ].slice(0, 7);
   const empty = !am && !pm;
   const score = day?.wellbeing;
 
   return (
-    <div className={cn("rounded-3xl border border-line bg-surface p-3.5", empty && "bg-transparent")}>
+    <div
+      className={cn(
+        "rounded-3xl border border-line bg-surface p-3.5",
+        empty && "bg-transparent",
+      )}
+    >
       <div className="flex items-center gap-3">
         <div className="w-12 shrink-0 text-center leading-tight">
-          <div className="text-xs font-semibold uppercase text-muted">{formatWeekday(date)}</div>
-          <div className="font-display text-2xl font-semibold">{formatDayMonth(date).split(" ")[0]}</div>
-          <div className="text-xs text-muted">{formatDayMonth(date).split(" ")[1]}</div>
+          <div className="text-xs font-semibold uppercase text-muted">
+            {formatWeekday(date)}
+          </div>
+          <div className="font-display text-2xl font-semibold">
+            {formatDayMonth(date).split(" ")[0]}
+          </div>
+          <div className="text-xs text-muted">
+            {formatDayMonth(date).split(" ")[1]}
+          </div>
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <PeriodLink period="morning" date={date} entry={am} />
             <PeriodLink period="night" date={date} entry={pm} />
-            {date === today && <span className="ml-auto text-xs font-semibold text-muted">{relativeDayLabel(date, today)}</span>}
+            {date === today && (
+              <span className="ml-auto text-xs font-semibold text-muted">
+                {relativeDayLabel(date, today)}
+              </span>
+            )}
           </div>
           {chips.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {chips.map((c) => (
-                <span key={c} className="rounded-full bg-surface-2/70 px-2 py-0.5 text-xs font-medium text-ink-2">
+                <span
+                  key={c}
+                  className="rounded-full bg-surface-2/70 px-2 py-0.5 text-xs font-medium text-ink-2"
+                >
                   {c}
                 </span>
               ))}
@@ -115,7 +186,15 @@ function DayRow({ date, today, day, entryMap }: { date: string; today: string; d
   );
 }
 
-function PeriodLink({ period, date, entry }: { period: Period; date: string; entry: Entry | undefined }) {
+function PeriodLink({
+  period,
+  date,
+  entry,
+}: {
+  period: Period;
+  date: string;
+  entry: Entry | undefined;
+}) {
   const Icon = period === "morning" ? Sun : Moon;
   return (
     <Link
@@ -123,7 +202,9 @@ function PeriodLink({ period, date, entry }: { period: Period; date: string; ent
       data-period={period}
       className={cn(
         "inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-semibold active:scale-95",
-        entry ? "bg-accent text-on-accent" : "border border-dashed border-line text-muted",
+        entry
+          ? "bg-accent text-on-accent"
+          : "border border-dashed border-line text-muted",
       )}
       aria-label={`${entry ? "Edit" : "Add"} ${period} check-in`}
     >
